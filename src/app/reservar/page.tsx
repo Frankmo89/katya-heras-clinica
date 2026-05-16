@@ -289,30 +289,13 @@ export default function ReservarPage() {
     a.isoDate.localeCompare(b.isoDate)
   );
 
-  // ── Shared time-slot button class builder
+  // ── Shared time-slot pill class builder
   const timeSlotCls = (selected: boolean) =>
     `cursor-pointer rounded-full border px-[22px] py-2.5 font-sans text-[14px] transition-all duration-300 ${
       selected
         ? "border-[var(--color-bronze)] bg-[var(--color-bronze)] text-white"
         : "border-[rgba(30,41,59,0.15)] bg-[var(--color-background)] text-[var(--color-text)] hover:border-[var(--color-bronze)]"
     }`;
-
-  const selectedIso      = date ? toIso(date) : null;
-  const selectedDaySlots = selectedIso ? (slotsByDate.get(selectedIso)?.slots ?? []) : [];
-  const slotsAM          = selectedDaySlots.filter((s) => parseInt(s.time.split(":")[0]) < 12);
-  const slotsPM          = selectedDaySlots.filter((s) => parseInt(s.time.split(":")[0]) >= 12);
-
-  // Group available days by month for calendar headers
-  type MonthGroup = { label: string; days: SlotDay[] };
-  const monthGroups = availableDays.reduce<MonthGroup[]>((acc, d) => {
-    const label = d.date.toLocaleDateString("es-MX", { month: "long", year: "numeric" });
-    if (acc.length === 0 || acc[acc.length - 1].label !== label) {
-      acc.push({ label, days: [d] });
-    } else {
-      acc[acc.length - 1].days.push(d);
-    }
-    return acc;
-  }, []);
 
   return (
     <div className="pb-0 pt-[72px]">
@@ -427,11 +410,18 @@ export default function ReservarPage() {
               {svc.es.name} · {svc.duration} min
             </p>
 
-            {/* Multi-month calendar — days sourced from whitelist */}
+            {/* Day-grouped slot grid */}
             {slotsLoading ? (
-              <div className="mb-8 grid grid-cols-7 gap-2">
-                {Array.from({ length: 14 }).map((_, i) => (
-                  <div key={i} className="h-[64px] rounded-xl bg-slate-100 animate-pulse" />
+              <div className="mb-8 space-y-5">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i}>
+                    <div className="mb-2 h-3 w-36 rounded-full bg-slate-100 animate-pulse" />
+                    <div className="flex flex-wrap gap-2">
+                      {Array.from({ length: 4 }).map((_, j) => (
+                        <div key={j} className="h-[38px] w-16 rounded-full bg-slate-100 animate-pulse" />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : availableDays.length === 0 ? (
@@ -450,86 +440,42 @@ export default function ReservarPage() {
               </div>
             ) : (
               <div className="mb-8 space-y-6">
-                {monthGroups.map(({ label, days: monthDays }) => (
-                  <div key={label}>
-                    <p className="mb-3 text-xs capitalize tracking-[0.15em] text-[var(--color-bronze)]">
-                      {label}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {monthDays.map((slotDay, i) => {
-                        const sel = !!date && slotDay.isoDate === toIso(date);
-                        return (
-                          <button
-                            key={i}
-                            onClick={() => {
-                              setDate(slotDay.date);
-                              setTime(null);
-                              setSelectedSlotId(null);
-                            }}
-                            className={`flex flex-col items-center gap-0.5 rounded-xl border px-3 py-3.5 font-sans transition-all duration-300 ${
-                              sel
-                                ? "border-[var(--color-bronze)] bg-[var(--color-bronze)] text-white"
-                                : "cursor-pointer border-[rgba(30,41,59,0.08)] bg-[var(--color-background)] text-[var(--color-text)] hover:border-[var(--color-bronze)]/50"
-                            }`}
-                          >
-                            <span className="text-[11px] uppercase tracking-[0.08em] opacity-70">
-                              {slotDay.date.toLocaleDateString("es-MX", { weekday: "short" })}
-                            </span>
-                            <span className="font-serif text-[20px]">{slotDay.date.getDate()}</span>
-                          </button>
-                        );
-                      })}
+                {availableDays.map((slotDay) => {
+                  const dayLabel = slotDay.date.toLocaleDateString("es-MX", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                  });
+                  return (
+                    <div key={slotDay.isoDate}>
+                      <p className="mb-2.5 text-xs font-semibold uppercase tracking-[0.15em] text-[var(--color-text-muted)]">
+                        {dayLabel}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {slotDay.slots.map((s) => {
+                          const selected =
+                            time === s.time &&
+                            date !== null &&
+                            toIso(date) === slotDay.isoDate;
+                          return (
+                            <button
+                              key={s.id}
+                              onClick={() => {
+                                setDate(slotDay.date);
+                                setTime(s.time);
+                                setSelectedSlotId(s.id);
+                              }}
+                              className={timeSlotCls(selected)}
+                            >
+                              {s.time}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            )}
-
-            {/* Time slots — visible only after a date is selected */}
-            {date && selectedDaySlots.length === 0 && (
-              <p className="mt-2 text-[13px] italic text-[var(--color-text-muted)]">
-                No hay disponibilidad para este día.
-              </p>
-            )}
-            {date && selectedDaySlots.length > 0 && (
-              <>
-                {slotsAM.length > 0 && (
-                  <>
-                    <p className="mb-3.5 text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)]">
-                      Mañana
-                    </p>
-                    <div className="mb-6 flex flex-wrap gap-2.5">
-                      {slotsAM.map((s) => (
-                        <button
-                          key={s.id}
-                          onClick={() => { setTime(s.time); setSelectedSlotId(s.id); }}
-                          className={timeSlotCls(time === s.time)}
-                        >
-                          {s.time}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-                {slotsPM.length > 0 && (
-                  <>
-                    <p className="mb-3.5 text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)]">
-                      Tarde
-                    </p>
-                    <div className="flex flex-wrap gap-2.5">
-                      {slotsPM.map((s) => (
-                        <button
-                          key={s.id}
-                          onClick={() => { setTime(s.time); setSelectedSlotId(s.id); }}
-                          className={timeSlotCls(time === s.time)}
-                        >
-                          {s.time}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </>
             )}
 
             <div className="mt-10 flex justify-between">
