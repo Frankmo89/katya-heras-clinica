@@ -467,6 +467,14 @@ export default function ConfiguracionPage() {
 
   // ── Save clinic info ───────────────────────────────────────────────────────
 
+  /** Purges the Next.js full-route cache for all public pages that render
+   *  clinic_settings data so visitors see changes immediately. */
+  const revalidatePublic = () => {
+    fetch("/api/revalidate-public", { method: "POST" }).catch(() => {
+      // Non-blocking — revalidation failure does not affect the save UX
+    });
+  };
+
   const saveClinicInfo = async () => {
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clinicInfo.contact_email);
     if (!emailOk) {
@@ -482,6 +490,7 @@ export default function ConfiguracionPage() {
     if (error) {
       showFeedback({ type: "error", message: "Error al guardar los datos del centro." });
     } else {
+      revalidatePublic();
       showFeedback({ type: "success", message: "Datos del centro actualizados correctamente." });
     }
   };
@@ -577,6 +586,7 @@ export default function ConfiguracionPage() {
     if (error) {
       showFeedback({ type: "error", message: "Error al guardar la apariencia." });
     } else {
+      revalidatePublic();
       showFeedback({ type: "success", message: "Apariencia de la página guardada correctamente." });
     }
   };
@@ -632,6 +642,7 @@ export default function ConfiguracionPage() {
     if (error) {
       showFeedback({ type: "error", message: "Error al guardar el contenido." });
     } else {
+      revalidatePublic();
       showFeedback({ type: "success", message: "Contenido de las páginas guardado correctamente." });
     }
   };
