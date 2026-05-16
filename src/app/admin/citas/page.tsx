@@ -765,21 +765,50 @@ export default function CitasPage() {
                     .
                   </p>
                 ) : (
-                  <select
-                    value={manualSlotId}
-                    onChange={(e) => setManualSlotId(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[var(--color-bronze)]"
-                  >
-                    <option value="">— Selecciona un horario —</option>
-                    {slots.map((s) => {
-                      const d     = new Date(s.start_time);
-                      const label = d.toLocaleString("es-MX", {
-                        weekday: "short", day: "numeric", month: "short",
-                        hour: "2-digit", minute: "2-digit", hour12: false,
+                  <div className="max-h-48 overflow-y-auto pr-1">
+                    {(() => {
+                      type ModalSlotGroup = { isoDate: string; label: string; items: typeof slots };
+                      const groups: ModalSlotGroup[] = [];
+                      const seen = new Map<string, number>();
+                      slots.forEach((slot) => {
+                        const isoDate = slot.start_time.slice(0, 10);
+                        const { date: dateLabel } = formatSlotTime(slot.start_time);
+                        if (!seen.has(isoDate)) {
+                          seen.set(isoDate, groups.length);
+                          groups.push({ isoDate, label: dateLabel, items: [slot] });
+                        } else {
+                          groups[seen.get(isoDate)!].items.push(slot);
+                        }
                       });
-                      return <option key={s.id} value={s.id}>{label}</option>;
-                    })}
-                  </select>
+                      return groups.map((group, gi) => (
+                        <div key={group.isoDate} className={gi === 0 ? "" : "mt-3"}>
+                          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400 capitalize">
+                            {group.label}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {group.items.map((slot) => {
+                              const { time: timeStr } = formatSlotTime(slot.start_time);
+                              const isSelected = manualSlotId === slot.id;
+                              return (
+                                <button
+                                  key={slot.id}
+                                  type="button"
+                                  onClick={() => setManualSlotId(slot.id)}
+                                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                                    isSelected
+                                      ? "bg-[var(--color-bronze)] text-white"
+                                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  {timeStr}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
                 )}
               </div>
 
