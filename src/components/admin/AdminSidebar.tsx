@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
+  X,
   LayoutDashboard,
   Users,
   CalendarDays,
@@ -22,25 +23,44 @@ const NAV_ITEMS = [
   { label: "Configuración", href: "/admin/configuracion", icon: Settings },
 ] as const;
 
-export function AdminSidebar() {
+interface AdminSidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
   async function handleSignOut() {
+    onClose();
     await supabase.auth.signOut();
     router.push("/admin/login");
   }
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-slate-100 bg-white">
+    <aside
+      className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-100 bg-white transform transition-transform duration-300 ease-in-out ${
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      } lg:translate-x-0`}
+    >
       {/* Brand strip */}
-      <div className="border-b border-slate-50 px-6 py-5">
-        <p className="font-serif text-[20px] leading-none text-[var(--color-text)]">
-          Katya Heras
-        </p>
-        <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-          Panel Clínico
-        </p>
+      <div className="flex items-center justify-between border-b border-slate-50 px-6 py-5">
+        <div>
+          <p className="font-serif text-[20px] leading-none text-[var(--color-text)]">
+            Katya Heras
+          </p>
+          <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
+            Panel Clínico
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          className="flex lg:hidden h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:bg-slate-50 hover:text-[var(--color-text)]"
+          aria-label="Cerrar menú"
+        >
+          <X size={18} strokeWidth={1.5} />
+        </button>
       </div>
 
       {/* Navigation */}
@@ -54,6 +74,7 @@ export function AdminSidebar() {
             <Link
               key={href}
               href={href}
+              onClick={onClose}
               className={`flex items-center gap-3 rounded-xl px-4 py-[10px] text-[13.5px] transition-all duration-200 ${
                 active
                   ? "bg-[rgba(192,138,94,0.10)] font-medium text-[var(--color-bronze)]"
