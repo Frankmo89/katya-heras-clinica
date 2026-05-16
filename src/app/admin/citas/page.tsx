@@ -309,17 +309,17 @@ export default function CitasPage() {
   /** Patients whose name contains what Katya has typed so far (max 8). */
   const filteredPatients =
     !selectedPatient && manualName.trim().length >= 1
-      ? patients
+      ? (patients ?? [])
           .filter((p) =>
-            p.full_name.toLowerCase().includes(manualName.toLowerCase().trim())
+            (p.full_name?.toLowerCase() ?? "").includes(manualName.toLowerCase().trim())
           )
           .slice(0, 8)
       : [];
 
-  const filteredBookings = bookings.filter(
+  const filteredBookings = (bookings ?? []).filter(
     (b) =>
       search.trim() === "" ||
-      b.patient_name.toLowerCase().includes(search.toLowerCase().trim())
+      (b.patient_name?.toLowerCase() ?? "").includes(search.toLowerCase().trim())
   );
 
   // ── Render ─────────────────────────────────────────────────────────────
