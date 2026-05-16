@@ -62,11 +62,8 @@ export default function NuevoServicioPage() {
 
   // Tab 1 — Información Básica
   const [titleEs,    setTitleEs]    = useState("");
-  const [titleEn,    setTitleEn]    = useState("");
   const [subtitleEs, setSubtitleEs] = useState("");
-  const [subtitleEn, setSubtitleEn] = useState("");
   const [descEs,     setDescEs]     = useState("");
-  const [descEn,     setDescEn]     = useState("");
   const [duration,   setDuration]   = useState("");
   const [price,      setPrice]      = useState("");
   const [tone, setTone] = useState<"pink" | "green" | "blue" | "">("");
@@ -129,11 +126,11 @@ export default function NuevoServicioPage() {
 
       const { error: dbError } = await supabase.from("services").insert({
         title_es:         titleEs.trim(),
-        title_en:         titleEn.trim()    || null,
+        title_en:         titleEs.trim()    || null,
         subtitle_es:      subtitleEs.trim() || null,
-        subtitle_en:      subtitleEn.trim() || null,
+        subtitle_en:      subtitleEs.trim() || null,
         description_es:   descEs.trim()     || null,
-        description_en:   descEn.trim()     || null,
+        description_en:   descEs.trim()     || null,
         duration_minutes: duration          ? parseInt(duration, 10)  : null,
         price:            price             ? parseFloat(price)        : null,
         tone:             tone              || null,
@@ -214,8 +211,8 @@ export default function NuevoServicioPage() {
             <section className={sectionCls}>
               <h2 className="mb-6 font-serif text-xl text-[var(--color-text)]">Nombre del Servicio</h2>
               <div className="grid gap-5 sm:grid-cols-2">
-                <div>
-                  <label className={labelCls}>Título en Español *</label>
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Título *</label>
                   <input
                     type="text" required value={titleEs}
                     onChange={(e) => setTitleEs(e.target.value)}
@@ -223,30 +220,12 @@ export default function NuevoServicioPage() {
                     className={inputCls}
                   />
                 </div>
-                <div>
-                  <label className={labelCls}>Título en Inglés</label>
-                  <input
-                    type="text" value={titleEn}
-                    onChange={(e) => setTitleEn(e.target.value)}
-                    placeholder="Structural Osteopathy"
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className={labelCls}>Subtítulo en Español</label>
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Subtítulo</label>
                   <input
                     type="text" value={subtitleEs}
                     onChange={(e) => setSubtitleEs(e.target.value)}
                     placeholder="Equilibra tu cuerpo desde sus raíces"
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className={labelCls}>Subtítulo en Inglés</label>
-                  <input
-                    type="text" value={subtitleEn}
-                    onChange={(e) => setSubtitleEn(e.target.value)}
-                    placeholder="Balance your body from its roots"
                     className={inputCls}
                   />
                 </div>
@@ -256,25 +235,14 @@ export default function NuevoServicioPage() {
             {/* Descriptions */}
             <section className={sectionCls}>
               <h2 className="mb-6 font-serif text-xl text-[var(--color-text)]">Descripción</h2>
-              <div className="grid gap-5 sm:grid-cols-2">
-                <div>
-                  <label className={labelCls}>Descripción en Español</label>
-                  <textarea
-                    rows={6} value={descEs}
-                    onChange={(e) => setDescEs(e.target.value)}
-                    placeholder="Tratamiento que aborda las restricciones de movilidad del sistema músculo-esquelético…"
-                    className={`${inputCls} resize-none`}
-                  />
-                </div>
-                <div>
-                  <label className={labelCls}>Descripción en Inglés</label>
-                  <textarea
-                    rows={6} value={descEn}
-                    onChange={(e) => setDescEn(e.target.value)}
-                    placeholder="Treatment that addresses mobility restrictions of the musculoskeletal system…"
-                    className={`${inputCls} resize-none`}
-                  />
-                </div>
+              <div>
+                <label className={labelCls}>Descripción</label>
+                <textarea
+                  rows={6} value={descEs}
+                  onChange={(e) => setDescEs(e.target.value)}
+                  placeholder="Tratamiento que aborda las restricciones de movilidad del sistema músculo-esquelético…"
+                  className={`${inputCls} resize-none`}
+                />
               </div>
             </section>
 
