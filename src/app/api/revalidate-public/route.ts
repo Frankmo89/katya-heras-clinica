@@ -11,5 +11,6 @@ import { NextResponse } from "next/server";
 export async function POST() {
   revalidatePath("/", "layout");   // covers / and all nested routes
   revalidatePath("/nosotros");
+  revalidatePath("/servicios");
   return NextResponse.json({ revalidated: true });
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import {
@@ -38,7 +38,6 @@ const TONE_OPTIONS = [
 ] as const;
 
 // ── Storage upload ─────────────────────────────────────────────────────────
-// Requires a public "service-images" bucket in Supabase Storage.
 async function uploadToStorage(file: File): Promise<string> {
   const ext  = file.name.split(".").pop() ?? "jpg";
   const path = `services/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
@@ -51,14 +50,17 @@ async function uploadToStorage(file: File): Promise<string> {
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────
-export default function NuevoServicioPage() {
+export default function EditarServicioPage() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const id = params.id;
 
   // UI state
-  const [tab,    setTab]    = useState<TabId>("basica");
-  const [saving, setSaving] = useState(false);
-  const [saved,  setSaved]  = useState(false);
-  const [error,  setError]  = useState<string | null>(null);
+  const [tab,     setTab]     = useState<TabId>("basica");
+  const [saving,  setSaving]  = useState(false);
+  const [saved,   setSaved]   = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // Tab 1 — Información Básica
   const [titleEs,    setTitleEs]    = useState("");
@@ -68,9 +70,11 @@ export default function NuevoServicioPage() {
   const [price,      setPrice]      = useState("");
   const [tone, setTone] = useState<"pink" | "green" | "blue" | "">("");
 
-  // Tab 2 — Multimedia
-  const [heroFile,     setHeroFile]     = useState<File | null>(null);
-  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  // Tab 2 — Multimedia (existing URLs + new files)
+  const [existingHeroUrl,     setExistingHeroUrl]     = useState<string | null>(null);
+  const [heroFile,             setHeroFile]             = useState<File | null>(null);
+  const [existingGalleryUrls, setExistingGalleryUrls] = useState<string[]>([]);
+  const [galleryFiles,         setGalleryFiles]         = useState<File[]>([]);
 
   // Tab 3 — Estructura
   const [timeline, setTimeline] = useState<TimelineStep[]>([{ time: "", title: "", desc: "" }]);
@@ -80,18 +84,55 @@ export default function NuevoServicioPage() {
   // Tab 4 — FAQs
   const [faqs, setFaqs] = useState<FaqItem[]>([{ question: "", answer: "" }]);
 
-  // ── Timeline helpers ────────────────────────────────────────────────────
+  // ── Load service ─────────────────────────────────────────────────────────
+  const loadService = useCallback(async () => {
+    setLoading(true);
+    const { data, error: fetchError } = await supabase
+      .from("services")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !data) {
+      setError("No se pudo cargar el servicio.");
+      setLoading(false);
+      return;
+    }
+
+    setTitleEs(data.title_es ?? "");
+    setSubtitleEs(data.subtitle_es ?? "");
+    setDescEs(data.description_es ?? "");
+    setDuration(data.duration_minutes != null ? String(data.duration_minutes) : "");
+    setPrice(data.price != null ? String(data.price) : "");
+    setTone((data.tone as typeof tone) ?? "");
+
+    setExistingHeroUrl(data.hero_image ?? null);
+    setExistingGalleryUrls(data.gallery_images ?? []);
+
+    if (Array.isArray(data.timeline) && data.timeline.length > 0)
+      setTimeline(data.timeline as TimelineStep[]);
+    if (Array.isArray(data.ideal_for) && data.ideal_for.length > 0)
+      setIdealFor(data.ideal_for as string[]);
+    if (Array.isArray(data.not_for) && data.not_for.length > 0)
+      setNotFor(data.not_for as string[]);
+    if (Array.isArray(data.faqs) && data.faqs.length > 0)
+      setFaqs(data.faqs as FaqItem[]);
+
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { loadService(); }, [loadService]);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
   function updateStep(i: number, field: keyof TimelineStep, val: string) {
     setTimeline((p) => p.map((s, idx) => idx === i ? { ...s, [field]: val } : s));
   }
 
-  // ── List helpers (idealFor / notFor) ────────────────────────────────────
   function updateItem(
     setter: React.Dispatch<React.SetStateAction<string[]>>,
     i: number, val: string
   ) { setter((p) => p.map((s, idx) => idx === i ? val : s)); }
 
-  // ── FAQ helpers ─────────────────────────────────────────────────────────
   function updateFaq(i: number, field: keyof FaqItem, val: string) {
     setFaqs((p) => p.map((f, idx) => idx === i ? { ...f, [field]: val } : f));
   }
@@ -108,15 +149,16 @@ export default function NuevoServicioPage() {
     setError(null);
 
     try {
-      // Upload hero
-      let heroUrl: string | null = null;
+      // Hero: upload new file if provided, otherwise keep existing URL
+      let heroUrl: string | null = existingHeroUrl;
       if (heroFile) heroUrl = await uploadToStorage(heroFile);
 
-      // Upload gallery (sequential to avoid rate limits)
-      const galleryUrls: string[] = [];
+      // Gallery: upload new files and append to retained existing URLs
+      const newGalleryUrls: string[] = [];
       for (const file of galleryFiles) {
-        galleryUrls.push(await uploadToStorage(file));
+        newGalleryUrls.push(await uploadToStorage(file));
       }
+      const allGalleryUrls = [...existingGalleryUrls, ...newGalleryUrls];
 
       // Clean arrays
       const cleanTimeline = timeline.filter((s) => s.title.trim() || s.desc.trim());
@@ -124,7 +166,7 @@ export default function NuevoServicioPage() {
       const cleanNotFor   = notFor.filter((s)   => s.trim());
       const cleanFaqs     = faqs.filter((f)     => f.question.trim());
 
-      const { error: dbError } = await supabase.from("services").insert({
+      const { error: dbError } = await supabase.from("services").update({
         title_es:         titleEs.trim(),
         title_en:         titleEs.trim()    || null,
         subtitle_es:      subtitleEs.trim() || null,
@@ -135,12 +177,12 @@ export default function NuevoServicioPage() {
         price:            price             ? parseFloat(price)        : null,
         tone:             tone              || null,
         hero_image:       heroUrl,
-        gallery_images:   galleryUrls.length   > 0 ? galleryUrls  : null,
+        gallery_images:   allGalleryUrls.length   > 0 ? allGalleryUrls  : null,
         timeline:         cleanTimeline.length > 0 ? cleanTimeline : null,
         ideal_for:        cleanIdealFor.length > 0 ? cleanIdealFor : null,
         not_for:          cleanNotFor.length   > 0 ? cleanNotFor   : null,
         faqs:             cleanFaqs.length     > 0 ? cleanFaqs     : null,
-      });
+      }).eq("id", id);
 
       if (dbError) throw new Error(dbError.message);
 
@@ -154,6 +196,15 @@ export default function NuevoServicioPage() {
   }
 
   const activeTone = TONE_OPTIONS.find((t) => t.value === tone) ?? null;
+
+  // ── Loading ───────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-24 text-sm text-slate-400">
+        Cargando servicio…
+      </div>
+    );
+  }
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
@@ -172,19 +223,19 @@ export default function NuevoServicioPage() {
           <span className="text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)] font-medium">
             Catálogo Clínico
           </span>
-          <h1 className="mt-0.5 font-serif text-3xl text-slate-800">Crear Servicio</h1>
+          <h1 className="mt-0.5 font-serif text-3xl text-slate-800">Editar Servicio</h1>
         </div>
       </div>
 
       {/* Tab bar */}
       <div className="mb-6 flex overflow-x-auto border-b border-slate-100">
-        {TABS.map(({ id, label, icon: Icon }) => {
-          const active = tab === id;
+        {TABS.map(({ id: tabId, label, icon: Icon }) => {
+          const active = tab === tabId;
           return (
             <button
-              key={id}
+              key={tabId}
               type="button"
-              onClick={() => setTab(id)}
+              onClick={() => setTab(tabId)}
               className={`relative flex shrink-0 items-center gap-2 px-5 py-3.5 text-[13px] font-medium transition-all ${
                 active
                   ? "text-[var(--color-bronze)]"
@@ -309,7 +360,32 @@ export default function NuevoServicioPage() {
               <p className="mb-6 text-sm text-[var(--color-text-muted)]">
                 Aparece en el hero de la página del servicio. Recomendado: 1400 × 800 px.
               </p>
-              <label className={labelCls}>Seleccionar archivo</label>
+
+              {/* Existing hero preview */}
+              {existingHeroUrl && !heroFile && (
+                <div className="mb-5 flex items-center gap-4">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={existingHeroUrl}
+                    alt="Imagen actual"
+                    className="h-24 w-40 rounded-xl object-cover shadow-sm"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">Imagen actual</p>
+                    <button
+                      type="button"
+                      onClick={() => setExistingHeroUrl(null)}
+                      className="mt-1.5 text-xs text-red-400 hover:text-red-500 transition"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <label className={labelCls}>
+                {existingHeroUrl && !heroFile ? "Reemplazar imagen" : "Seleccionar archivo"}
+              </label>
               <input
                 type="file"
                 accept="image/*"
@@ -332,7 +408,7 @@ export default function NuevoServicioPage() {
                       onClick={() => setHeroFile(null)}
                       className="mt-1.5 text-xs text-red-400 hover:text-red-500 transition"
                     >
-                      Eliminar
+                      Cancelar
                     </button>
                   </div>
                 </div>
@@ -345,7 +421,38 @@ export default function NuevoServicioPage() {
               <p className="mb-6 text-sm text-[var(--color-text-muted)]">
                 Puedes seleccionar varios archivos a la vez. Haz clic en la x para quitar una imagen.
               </p>
-              <label className={labelCls}>Seleccionar archivos</label>
+
+              {/* Existing gallery */}
+              {existingGalleryUrls.length > 0 && (
+                <div className="mb-5">
+                  <p className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+                    Imágenes actuales
+                  </p>
+                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                    {existingGalleryUrls.map((url, i) => (
+                      <div key={i} className="group relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Imagen ${i + 1}`}
+                          className="h-24 w-full rounded-xl object-cover shadow-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExistingGalleryUrls((prev) => prev.filter((_, idx) => idx !== i))
+                          }
+                          className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white group-hover:flex"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <label className={labelCls}>Añadir imágenes</label>
               <input
                 type="file"
                 accept="image/*"
@@ -621,7 +728,7 @@ export default function NuevoServicioPage() {
             ) : (
               <>
                 <Save size={16} />
-                Guardar Servicio
+                Guardar Cambios
               </>
             )}
           </button>
@@ -635,7 +742,7 @@ export default function NuevoServicioPage() {
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-surface-green)]">
               <Check size={28} className="text-emerald-500" strokeWidth={2.5} />
             </div>
-            <p className="font-serif text-2xl text-[var(--color-text)]">¡Servicio guardado!</p>
+            <p className="font-serif text-2xl text-[var(--color-text)]">¡Servicio actualizado!</p>
             <p className="text-sm font-medium text-slate-600">{titleEs}</p>
             <p className="text-xs text-slate-400">Redirigiendo al catálogo…</p>
           </div>

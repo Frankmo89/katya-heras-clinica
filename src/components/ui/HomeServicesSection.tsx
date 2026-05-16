@@ -1,10 +1,10 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
-import { SERVICES } from "@/data/services";
 import { ServiceCarousel } from "@/components/ui/ServiceCarousel";
 import { Button } from "@/components/ui/Button";
 import { useLanguage } from "@/context/LanguageContext";
+import type { Service } from "@/data/services";
 
 const COPY = {
   es: {
@@ -19,7 +19,7 @@ const COPY = {
   },
 } as const;
 
-export function HomeServicesSection() {
+export function HomeServicesSection({ services }: { services: Service[] }) {
   const { lang } = useLanguage();
   const c = COPY[lang];
 
@@ -44,7 +44,7 @@ export function HomeServicesSection() {
           </Button>
         </div>
 
-        <ServiceCarousel services={SERVICES} />
+        <ServiceCarousel services={services} />
       </div>
     </section>
   );

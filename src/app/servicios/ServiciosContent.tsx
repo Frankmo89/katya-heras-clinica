@@ -1,7 +1,7 @@
 "use client";
 
 import { useLanguage } from "@/context/LanguageContext";
-import { SERVICES } from "@/data/services";
+import type { Service } from "@/data/services";
 import { ServiceCard } from "@/components/ui/ServiceCard";
 
 const COPY = {
@@ -19,7 +19,7 @@ const COPY = {
   },
 };
 
-export function ServiciosContent() {
+export function ServiciosContent({ services }: { services: Service[] }) {
   const { lang } = useLanguage();
   const c = COPY[lang];
 
@@ -43,7 +43,7 @@ export function ServiciosContent() {
 
         {/* ── Grid ── */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {SERVICES.map((svc) => (
+          {services.map((svc) => (
             <ServiceCard key={svc.id} svc={svc} />
           ))}
         </div>

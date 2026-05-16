@@ -114,6 +114,39 @@ export const SERVICES: Service[] = [
   },
 ];
 
+// ── DB row type & mapper ────────────────────────────────────────────────────────
+export interface DbService {
+  id: string;
+  title_es: string;
+  title_en: string | null;
+  subtitle_es: string | null;
+  subtitle_en: string | null;
+  description_es: string | null;
+  description_en: string | null;
+  duration_minutes: number | null;
+  price: number | null;
+  tone: string | null;
+}
+
+export function mapDbService(row: DbService): Service {
+  return {
+    id:       row.id,
+    tone:     (row.tone as ServiceTone) ?? "green",
+    es: {
+      name:    row.title_es,
+      tagline: row.subtitle_es    ?? "",
+      desc:    row.description_es ?? "",
+    },
+    en: {
+      name:    row.title_en    ?? row.title_es,
+      tagline: row.subtitle_en ?? row.subtitle_es ?? "",
+      desc:    row.description_en ?? row.description_es ?? "",
+    },
+    duration: row.duration_minutes ?? 60,
+    price:    row.price != null ? String(Math.round(row.price)) : "",
+  };
+}
+
 // ─────────────────────────────────────────────
 // Service detail types
 // ─────────────────────────────────────────────

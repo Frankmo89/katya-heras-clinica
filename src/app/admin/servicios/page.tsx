@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
-import { Plus, Clock, Banknote, Stethoscope } from "lucide-react";
+import { Plus, Clock, Banknote, Stethoscope, Pencil, Trash2 } from "lucide-react";
 
 interface Service {
   id: string;
@@ -29,6 +29,7 @@ const TONE_DOT: Record<string, string> = {
 export default function ServiciosPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     supabase
@@ -40,6 +41,17 @@ export default function ServiciosPage() {
         setLoading(false);
       });
   }, []);
+
+  async function handleDelete(id: string, titleEs: string) {
+    if (!window.confirm(`¿Eliminar el servicio "${titleEs}"? Esta acción no se puede deshacer.`)) return;
+    setDeleting(id);
+    const { error } = await supabase.from("services").delete().eq("id", id);
+    if (!error) {
+      setServices((prev) => prev.filter((s) => s.id !== id));
+      fetch("/api/revalidate-public", { method: "POST" }).catch(() => {});
+    }
+    setDeleting(null);
+  }
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -89,17 +101,38 @@ export default function ServiciosPage() {
                 className="group flex flex-col gap-4 rounded-3xl border border-white/60 p-6 shadow-[0_2px_12px_rgba(0,0,0,0.05)] transition hover:shadow-[0_4px_20px_rgba(0,0,0,0.09)]"
               >
                 {/* Tone dot + EN label */}
-                <div className="flex items-center gap-2">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: accent }}
-                  />
-                  <span
-                    className="text-[11px] uppercase tracking-[0.16em] font-medium"
-                    style={{ color: accent }}
-                  >
-                    {s.title_en ?? "—"}
-                  </span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: accent }}
+                    />
+                    <span
+                      className="text-[11px] uppercase tracking-[0.16em] font-medium"
+                      style={{ color: accent }}
+                    >
+                      {s.title_en ?? "—"}
+                    </span>
+                  </div>
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Link
+                      href={`/admin/servicios/${s.id}`}
+                      className="inline-flex items-center justify-center h-7 w-7 rounded-lg bg-white/70 text-slate-500 hover:text-[var(--color-bronze)] hover:bg-white transition"
+                      title="Editar"
+                    >
+                      <Pencil size={13} />
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(s.id, s.title_es)}
+                      disabled={deleting === s.id}
+                      className="inline-flex items-center justify-center h-7 w-7 rounded-lg bg-white/70 text-slate-500 hover:text-red-500 hover:bg-white transition disabled:opacity-50"
+                      title="Eliminar"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Spanish title */}
