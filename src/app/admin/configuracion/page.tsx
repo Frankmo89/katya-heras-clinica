@@ -210,6 +210,9 @@ export default function ConfiguracionPage() {
   const [bookingInfo, setBookingInfo]     = useState<BookingSettings>(BOOKING_SETTINGS_DEFAULTS);
   const [bookingLoading, setBookingLoading] = useState(true);
   const [bookingSaving, setBookingSaving]   = useState(false);
+  // Raw string states for numeric inputs so backspace / clear works properly
+  const [rawMinHours, setRawMinHours] = useState(String(BOOKING_SETTINGS_DEFAULTS.min_hours_advance));
+  const [rawMaxDays,  setRawMaxDays]  = useState(String(BOOKING_SETTINGS_DEFAULTS.max_days_advance));
 
   // Hero appearance state
   const [heroSaving, setHeroSaving]       = useState(false);
@@ -348,7 +351,12 @@ export default function ConfiguracionPage() {
       .select("*")
       .eq("id", 1)
       .single();
-    if (!error && data) setBookingInfo(data as BookingSettings);
+    if (!error && data) {
+      const bs = data as BookingSettings;
+      setBookingInfo(bs);
+      setRawMinHours(String(bs.min_hours_advance));
+      setRawMaxDays(String(bs.max_days_advance));
+    }
     setBookingLoading(false);
   }, []);
 
@@ -505,18 +513,20 @@ export default function ConfiguracionPage() {
   // ── Save booking settings ──────────────────────────────────────────────────
 
   const saveBookingInfo = async () => {
-    if (bookingInfo.min_hours_advance < 0) {
+    const minHours = rawMinHours === "" ? 0 : Math.max(0, parseInt(rawMinHours, 10) || 0);
+    const maxDays  = rawMaxDays  === "" ? 1 : Math.max(1, parseInt(rawMaxDays,  10) || 1);
+    if (minHours < 0) {
       showFeedback({ type: "error", message: "Las horas mínimas de anticipación no pueden ser negativas." });
       return;
     }
-    if (bookingInfo.max_days_advance < 1) {
+    if (maxDays < 1) {
       showFeedback({ type: "error", message: "Los días máximos deben ser al menos 1." });
       return;
     }
     setBookingSaving(true);
     const { error } = await supabase
       .from("booking_settings")
-      .upsert({ ...bookingInfo, id: 1 }, { onConflict: "id" });
+      .upsert({ ...bookingInfo, id: 1, min_hours_advance: minHours, max_days_advance: maxDays }, { onConflict: "id" });
     setBookingSaving(false);
     if (error) {
       showFeedback({ type: "error", message: "Error al guardar las políticas de reservas." });
@@ -1390,13 +1400,8 @@ export default function ConfiguracionPage() {
                         min={0}
                         max={168}
                         step={1}
-                        value={bookingInfo.min_hours_advance}
-                        onChange={(e) =>
-                          setBookingInfo((prev) => ({
-                            ...prev,
-                            min_hours_advance: Math.max(0, parseInt(e.target.value) || 0),
-                          }))
-                        }
+                        value={rawMinHours}
+                        onChange={(e) => setRawMinHours(e.target.value)}
                         className="w-full text-sm border border-slate-200 rounded-xl px-3 pr-16 py-2.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-bronze)] focus:border-transparent"
                         placeholder="24"
                       />
@@ -1420,13 +1425,8 @@ export default function ConfiguracionPage() {
                         min={1}
                         max={365}
                         step={1}
-                        value={bookingInfo.max_days_advance}
-                        onChange={(e) =>
-                          setBookingInfo((prev) => ({
-                            ...prev,
-                            max_days_advance: Math.max(1, parseInt(e.target.value) || 1),
-                          }))
-                        }
+                        value={rawMaxDays}
+                        onChange={(e) => setRawMaxDays(e.target.value)}
                         className="w-full text-sm border border-slate-200 rounded-xl px-3 pr-12 py-2.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-bronze)] focus:border-transparent"
                         placeholder="60"
                       />
