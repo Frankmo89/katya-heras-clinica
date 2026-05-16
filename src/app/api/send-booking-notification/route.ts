@@ -11,14 +11,17 @@ if (!process.env.RESEND_API_KEY) {
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ── Payload shape sent by the booking page ────────────────────────────────────
+type ActionType = "CREATE" | "CANCEL" | "MODIFY";
+
 type BookingNotificationPayload = {
+  actionType?: ActionType;
   patientName: string;
-  patientEmail: string;
-  patientPhone: string;
+  patientEmail?: string | null;
+  patientPhone?: string | null;
   service: string;
   date: string;   // "YYYY-MM-DD"
   time: string;   // "HH:MM"
-  bookingRef: string;
+  bookingRef?: string | null;
   clinicEmail: string;
   notes?: string;
 };
@@ -32,6 +35,28 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+// ── Per-action visual config ──────────────────────────────────────────────────
+const ACTION_CONFIG: Record<ActionType, { color: string; label: string; subText: string; subject: (n: string) => string }> = {
+  CREATE: {
+    color:   "#C08A5E",
+    label:   "NUEVA RESERVA",
+    subText: "Se acaba de registrar una nueva cita en el sistema. Aquí tienes el resumen:",
+    subject: (n) => `✅ [Katya Heras] Nueva reserva · ${n}`,
+  },
+  CANCEL: {
+    color:   "#a64b4b",
+    label:   "CITA CANCELADA",
+    subText: "La siguiente cita ha sido cancelada en el sistema:",
+    subject: (n) => `❌ [Katya Heras] Cita cancelada · ${n}`,
+  },
+  MODIFY: {
+    color:   "#5a7fa3",
+    label:   "CITA MODIFICADA",
+    subText: "Los datos de la siguiente cita han sido actualizados:",
+    subject: (n) => `✏️ [Katya Heras] Cita modificada · ${n}`,
+  },
+};
 
 // ── Table row helper ──────────────────────────────────────────────────────────
 function row(label: string, value: string, shaded: boolean): string {
@@ -52,8 +77,20 @@ function row(label: string, value: string, shaded: boolean): string {
 
 // ── HTML email builder ────────────────────────────────────────────────────────
 function buildHtml(p: BookingNotificationPayload, formattedDate: string): string {
+  const action = ACTION_CONFIG[p.actionType ?? "CREATE"];
+
+  const emailRow = p.patientEmail
+    ? row("Email", `<span style="font-family:Arial,sans-serif;font-size:14px;">${esc(p.patientEmail)}</span>`, false)
+    : "";
+  const phoneRow = p.patientPhone
+    ? row("Teléfono", `<span style="font-family:Arial,sans-serif;font-size:14px;">${esc(p.patientPhone)}</span>`, !p.patientEmail)
+    : "";
   const notesRow = p.notes
     ? row("Notas", `<span style="font-family:Arial,sans-serif;font-size:14px;color:#64748B;font-style:italic;">${esc(p.notes)}</span>`, true)
+    : "";
+  const refShaded = !p.notes && !p.patientPhone;
+  const refRow = p.bookingRef
+    ? row("Referencia", `<span style="font-family:'Courier New',monospace;font-size:12px;color:#94A3B8;">${esc(p.bookingRef)}</span>`, refShaded)
     : "";
 
   return `<!DOCTYPE html>
@@ -73,10 +110,10 @@ function buildHtml(p: BookingNotificationPayload, formattedDate: string): string
 
         <!-- ─── Header ─── -->
         <tr>
-          <td style="background:#C08A5E;padding:28px 36px;">
+          <td style="background:${action.color};padding:28px 36px;">
             <p style="margin:0;font-family:Arial,sans-serif;font-size:10px;
                       text-transform:uppercase;letter-spacing:0.25em;
-                      color:rgba(255,255,255,0.70);">Nueva reserva</p>
+                      color:rgba(255,255,255,0.70);">${action.label}</p>
             <p style="margin:8px 0 0;font-family:Georgia,'Times New Roman',serif;
                       font-size:26px;font-weight:normal;color:#ffffff;">
               ${esc(p.patientName)}
@@ -88,7 +125,7 @@ function buildHtml(p: BookingNotificationPayload, formattedDate: string): string
         <tr>
           <td style="padding:20px 36px 0;font-family:Arial,sans-serif;font-size:13px;
                      color:#64748B;">
-            Se acaba de registrar una nueva cita en el sistema. Aquí tienes el resumen:
+            ${action.subText}
           </td>
         </tr>
 
@@ -97,12 +134,12 @@ function buildHtml(p: BookingNotificationPayload, formattedDate: string): string
           <td style="padding:20px 36px 32px;">
             <table width="100%" cellpadding="0" cellspacing="0"
                    style="border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
-              ${row("Servicio",    esc(p.service),                                    false)}
-              ${row("Fecha",       `${esc(formattedDate)} &middot; ${esc(p.time)}&thinsp;h`, true)}
-              ${row("Email",       `<span style="font-family:Arial,sans-serif;font-size:14px;">${esc(p.patientEmail)}</span>`, false)}
-              ${row("Teléfono",    `<span style="font-family:Arial,sans-serif;font-size:14px;">${esc(p.patientPhone)}</span>`, true)}
+              ${row("Servicio",    esc(p.service),                                                                                       false)}
+              ${row("Fecha",       `${esc(formattedDate)} &middot; ${esc(p.time)}&thinsp;h`,                                             true)}
+              ${emailRow}
+              ${phoneRow}
               ${notesRow}
-              ${row("Referencia",  `<span style="font-family:'Courier New',monospace;font-size:12px;color:#94A3B8;">${esc(p.bookingRef)}</span>`, p.notes ? false : true)}
+              ${refRow}
             </table>
           </td>
         </tr>
@@ -130,8 +167,8 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as BookingNotificationPayload;
 
     // Validate required fields
-    const { patientName, patientEmail, patientPhone, service, date, time, bookingRef, clinicEmail } = body;
-    if (!patientName || !patientEmail || !patientPhone || !service || !date || !time || !bookingRef || !clinicEmail) {
+    const { patientName, service, date, time, clinicEmail } = body;
+    if (!patientName || !service || !date || !time || !clinicEmail) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -147,7 +184,7 @@ export async function POST(request: NextRequest) {
     const { error } = await resend.emails.send({
       from:    "Clinica Katya Heras <onboarding@resend.dev>",
       to:      [clinicEmail],
-      subject: `✅ Nueva cita agendada: ${patientName}`,
+      subject: ACTION_CONFIG[body.actionType ?? "CREATE"].subject(patientName),
       html:    buildHtml(body, formattedDate),
     });
 
@@ -156,7 +193,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to send email" }, { status: 500 });
     }
 
-    console.log(`[send-booking-notification] Email sent to ${clinicEmail} for booking ${bookingRef}`);
+    console.log(`[send-booking-notification] Email (${body.actionType ?? "CREATE"}) sent to ${clinicEmail} for ${patientName}`);
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[send-booking-notification] Unexpected error:", err);

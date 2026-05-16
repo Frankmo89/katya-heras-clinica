@@ -111,8 +111,9 @@ export default function CitasPage() {
   };
 
   // ── Agenda tab ─────────────────────────────────────────────────────────
-  const [slots,       setSlots]       = useState<AdminSlot[]>([]);
+  const [slots,        setSlots]        = useState<AdminSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(true);
+  const [clinicEmail,  setClinicEmail]  = useState("");
   const [newDateTime, setNewDateTime] = useState("");
   const [adding,      setAdding]      = useState(false);
 
@@ -175,11 +176,21 @@ export default function CitasPage() {
     setPatients(data ?? []);
   }, []);
 
+  const fetchClinicEmail = useCallback(async () => {
+    const { data } = await supabase
+      .from("clinic_settings")
+      .select("contact_email")
+      .eq("id", 1)
+      .single();
+    if (data?.contact_email) setClinicEmail(data.contact_email);
+  }, []);
+
   useEffect(() => {
     fetchSlots();
     fetchBookings();
     fetchPatients();
-  }, [fetchSlots, fetchBookings, fetchPatients]);
+    fetchClinicEmail();
+  }, [fetchSlots, fetchBookings, fetchPatients, fetchClinicEmail]);
 
   // ── Agenda actions ─────────────────────────────────────────────────────
   const addSlot = async () => {
@@ -212,6 +223,7 @@ export default function CitasPage() {
 
   // ── Citas actions ──────────────────────────────────────────────────────
   const updateBookingStatus = async (id: string, status: "completed" | "cancelled") => {
+    const booking = bookings.find((b) => b.id === id);
     const { error } = await supabase.from("bookings").update({ status }).eq("id", id);
     if (error) {
       showFeedback({ type: "error", message: "Error al actualizar la cita." });
@@ -226,6 +238,30 @@ export default function CitasPage() {
         message:
           status === "completed" ? "Cita marcada como completada." : "Cita cancelada.",
       });
+
+      // Fire cancellation email — non-blocking, failure is silent to the user
+      if (status === "cancelled" && booking && clinicEmail) {
+        const svc = SERVICES.find((s) => s.id === booking.service_id);
+        try {
+          await fetch("/api/send-booking-notification", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              actionType:   "CANCEL",
+              patientName:  booking.patient_name,
+              patientEmail: booking.patient_email,
+              patientPhone: booking.patient_phone,
+              service:      svc?.es.name ?? booking.service_id,
+              date:         booking.date,
+              time:         booking.time,
+              bookingRef:   booking.booking_ref,
+              clinicEmail,
+            }),
+          });
+        } catch (emailErr) {
+          console.warn("[citas] Failed to send cancellation email:", emailErr);
+        }
+      }
     }
   };
 
