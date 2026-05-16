@@ -478,34 +478,52 @@ export default function CitasPage() {
               </div>
             ) : (
               <>
-                <div className="hidden sm:grid grid-cols-[1fr_auto_auto] gap-4 border-b border-slate-100 bg-slate-50 px-6 py-3 text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
-                  <span>Fecha</span>
-                  <span>Hora</span>
-                  <span />
-                </div>
-                {slots.map((slot, idx) => {
-                  const { date: dateStr, time: timeStr } = formatSlotTime(slot.start_time);
+                {(() => {
+                  type SlotGroup = { isoDate: string; label: string; items: typeof slots };
+                  const groups: SlotGroup[] = [];
+                  const seen = new Map<string, number>();
+                  slots.forEach((slot) => {
+                    const isoDate = slot.start_time.slice(0, 10);
+                    const { date: dateLabel } = formatSlotTime(slot.start_time);
+                    if (!seen.has(isoDate)) {
+                      seen.set(isoDate, groups.length);
+                      groups.push({ isoDate, label: dateLabel, items: [slot] });
+                    } else {
+                      groups[seen.get(isoDate)!].items.push(slot);
+                    }
+                  });
                   return (
-                    <div
-                      key={slot.id}
-                      className={`grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] items-center gap-3 sm:gap-4 px-6 py-4 ${
-                        idx !== slots.length - 1 ? "border-b border-slate-50" : ""
-                      }`}
-                    >
-                      <p className="text-sm font-medium capitalize text-slate-800">{dateStr}</p>
-                      <span className="inline-flex items-center rounded-full bg-[rgba(192,138,94,0.10)] px-2.5 py-1 text-xs font-medium text-[var(--color-bronze)]">
-                        {timeStr}
-                      </span>
-                      <button
-                        onClick={() => deleteSlot(slot.id)}
-                        aria-label="Eliminar horario"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
-                      >
-                        <Trash2 size={15} strokeWidth={1.75} />
-                      </button>
+                    <div className="p-6 space-y-5">
+                      {groups.map((group) => (
+                        <div key={group.isoDate}>
+                          <p className="mb-2.5 text-xs font-semibold capitalize tracking-[0.1em] text-slate-500 first:mt-0 mt-1">
+                            {group.label}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {group.items.map((slot) => {
+                              const { time: timeStr } = formatSlotTime(slot.start_time);
+                              return (
+                                <div
+                                  key={slot.id}
+                                  className="flex items-center gap-1.5 rounded-full border border-slate-100 bg-slate-50 pl-3 pr-1.5 py-1.5 text-xs text-slate-700"
+                                >
+                                  <span className="font-medium tabular-nums">{timeStr}</span>
+                                  <button
+                                    onClick={() => deleteSlot(slot.id)}
+                                    aria-label="Eliminar horario"
+                                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-300 transition-colors hover:bg-red-50 hover:text-red-500"
+                                  >
+                                    <Trash2 size={11} strokeWidth={1.75} />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   );
-                })}
+                })()}
               </>
             )}
           </div>
