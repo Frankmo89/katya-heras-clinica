@@ -24,6 +24,10 @@
 .DS_Store
 *.pem
 
+# local env files — never commit these
+.env.local
+.env*.local
+
 # debug
 npm-debug.log*
 yarn-debug.log*
