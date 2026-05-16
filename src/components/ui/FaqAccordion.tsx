@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import type { FaqItem } from "@/data/services";
+import { useLanguage } from "@/context/LanguageContext";
 
 export function FaqAccordion({ items }: { items: FaqItem[] }) {
   const [open, setOpen] = useState<number>(0);
+  const { lang } = useLanguage();
 
   return (
     <div>
@@ -21,7 +23,7 @@ export function FaqAccordion({ items }: { items: FaqItem[] }) {
               className="flex w-full cursor-pointer items-center justify-between gap-4 py-6 text-left"
             >
               <span className="font-serif text-xl font-normal text-[var(--color-text)]">
-                {item.es.q}
+                {item[lang].q}
               </span>
               <span
                 className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all duration-300 ${
@@ -38,7 +40,7 @@ export function FaqAccordion({ items }: { items: FaqItem[] }) {
 
             {isOpen && (
               <div className="max-w-[640px] pb-6 text-base leading-[1.7] text-[var(--color-text-muted)]">
-                {item.es.a}
+                {item[lang].a}
               </div>
             )}
           </div>

@@ -5,12 +5,26 @@ import { X, Minus, Plus, ArrowRight } from "lucide-react";
 import type { ShopProduct, ProductTone } from "@/data/shop";
 import { SHOP_CATEGORIES } from "@/data/shop";
 import { Button } from "@/components/ui/Button";
+import { useLanguage } from "@/context/LanguageContext";
 
 const toneVar: Record<ProductTone, string> = {
   pink:   "var(--color-surface-pink)",
   green:  "var(--color-surface-green)",
   blue:   "var(--color-surface-blue)",
   bronze: "rgba(192, 138, 94, 0.15)",
+};
+
+const COPY = {
+  es: {
+    ritual:     "Ritual de uso",
+    ritualDesc: "Encuentra una hora sin pendientes. Apaga el teléfono. Respira tres veces antes de empezar.",
+    addToCart:  "Llevar a casa",
+  },
+  en: {
+    ritual:     "Use ritual",
+    ritualDesc: "Find an hour free of tasks. Turn off your phone. Take three breaths before you begin.",
+    addToCart:  "Take home",
+  },
 };
 
 interface ShopProductDrawerProps {
@@ -21,11 +35,13 @@ interface ShopProductDrawerProps {
 
 export function ShopProductDrawer({ p, onClose, onAdd }: ShopProductDrawerProps) {
   const [qty, setQty] = useState(1);
+  const { lang } = useLanguage();
+  const dc = COPY[lang];
 
   if (!p) return null;
 
   const swatch   = toneVar[p.tone] ?? "var(--color-surface-blue)";
-  const catLabel = SHOP_CATEGORIES.find((c) => c.id === p.cat)?.es ?? "";
+  const catLabel = SHOP_CATEGORIES.find((c) => c.id === p.cat)?.[lang] ?? "";
 
   return (
     <>
@@ -51,7 +67,7 @@ export function ShopProductDrawer({ p, onClose, onAdd }: ShopProductDrawerProps)
           className="flex aspect-[4/3] shrink-0 items-center justify-center font-serif text-[140px] text-black/[0.06]"
           style={{ background: `linear-gradient(135deg, ${swatch} 0%, #FAFAF8 100%)` }}
         >
-          {p.name.es.charAt(0)}
+          {p.name[lang].charAt(0)}
         </div>
 
         {/* Content */}
@@ -63,11 +79,11 @@ export function ShopProductDrawer({ p, onClose, onAdd }: ShopProductDrawerProps)
           </p>
 
           <h2 className="m-0 font-serif text-[clamp(2rem,3vw,2.5rem)] font-light leading-[1.15] text-[var(--color-text)]">
-            {p.name.es}
+            {p.name[lang]}
           </h2>
 
           <p className="m-0 text-base leading-[1.7] text-[var(--color-text-muted)]">
-            {p.story.es}
+            {p.story[lang]}
           </p>
 
           {/* Price + size */}
@@ -84,10 +100,10 @@ export function ShopProductDrawer({ p, onClose, onAdd }: ShopProductDrawerProps)
           {/* Ritual de uso */}
           <div className="rounded-xl bg-[var(--color-background-soft)] px-6 py-[22px]">
             <p className="mb-2.5 text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)]">
-              Ritual de uso
+              {dc.ritual}
             </p>
             <p className="m-0 text-[14px] leading-[1.65] text-[var(--color-text)]">
-              Encuentra una hora sin pendientes. Apaga el teléfono. Respira tres veces antes de empezar.
+              {dc.ritualDesc}
             </p>
           </div>
 
@@ -119,7 +135,7 @@ export function ShopProductDrawer({ p, onClose, onAdd }: ShopProductDrawerProps)
               }}
               className="flex-1 justify-center"
             >
-              Llevar a casa
+              {dc.addToCart}
             </Button>
           </div>
 

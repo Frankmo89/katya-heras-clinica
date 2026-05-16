@@ -14,6 +14,7 @@ import { ShopProductDrawer } from "@/components/ui/ShopProductDrawer";
 import { Button } from "@/components/ui/Button";
 import { useClinicSettings } from "@/context/ClinicSettingsContext";
 import { formatPrice } from "@/lib/format";
+import { useLanguage } from "@/context/LanguageContext";
 
 const toneVar: Record<ProductTone, string> = {
   pink:   "var(--color-surface-pink)",
@@ -22,11 +23,56 @@ const toneVar: Record<ProductTone, string> = {
   bronze: "rgba(192, 138, 94, 0.15)",
 };
 
-const LOGISTICS_ITEMS = [
-  "Entrega exclusiva en nuestras instalaciones en Tecate",
-  "Adquiere tus productos durante tu próxima cita",
-  "Sin tiempos de espera ni costos de envío",
-];
+const COPY = {
+  es: {
+    heroBadge:         "Tienda \u00b7 Lo que se llevan a casa",
+    heading1:          "La sesi\u00f3n",
+    heading2:          "termina. La",
+    headingAccent:     "calma",
+    heading3:          "se queda.",
+    desc:              "Velas, aceites y objetos peque\u00f1os que prolongan el trabajo de la sesi\u00f3n en casa. Curados a mano, en cantidades peque\u00f1as.",
+    cart:              "Cesta",
+    cartTitle:         "Tu cesta",
+    cartEmpty:         "La cesta est\u00e1 vac\u00eda.",
+    cartEmptySub:      "A\u00fan no has elegido nada.",
+    removeItem:        "Quitar",
+    subtotal:          "Subtotal",
+    checkout:          "Finalizar compra",
+    checkoutNote:      "Env\u00edo e impuestos calculados al finalizar.",
+    logisticsOverline: "Entrega en cl\u00ednica",
+    logisticsHeading:  "Compra local.",
+    logisticsDesc:     "Todos nuestros productos est\u00e1n disponibles exclusivamente para venta y entrega presencial en nuestra cl\u00ednica en Tecate. No realizamos env\u00edos por paqueter\u00eda.",
+    logisticsItems: [
+      "Entrega exclusiva en nuestras instalaciones en Tecate",
+      "Adquiere tus productos durante tu pr\u00f3xima cita",
+      "Sin tiempos de espera ni costos de env\u00edo",
+    ],
+  },
+  en: {
+    heroBadge:         "Shop \u00b7 Take the calm home",
+    heading1:          "The session",
+    heading2:          "ends. The",
+    headingAccent:     "calm",
+    heading3:          "stays.",
+    desc:              "Candles, oils, and small objects that extend the work of your session at home. Curated by hand, in small batches.",
+    cart:              "Cart",
+    cartTitle:         "Your cart",
+    cartEmpty:         "Your cart is empty.",
+    cartEmptySub:      "You haven\u2019t chosen anything yet.",
+    removeItem:        "Remove",
+    subtotal:          "Subtotal",
+    checkout:          "Checkout",
+    checkoutNote:      "Shipping and taxes calculated at checkout.",
+    logisticsOverline: "Clinic pickup",
+    logisticsHeading:  "Buy local.",
+    logisticsDesc:     "All our products are available exclusively for in-person sale and pickup at our clinic in Tecate. We do not ship by courier.",
+    logisticsItems: [
+      "Exclusive pickup at our clinic in Tecate",
+      "Pick up your products at your next appointment",
+      "No waiting time, no shipping costs",
+    ],
+  },
+};
 
 export default function TiendaPage() {
   const [cat,      setCat]      = useState("todo");
@@ -36,6 +82,8 @@ export default function TiendaPage() {
 
   const { settings } = useClinicSettings();
   const currency = settings.currency;
+  const { lang } = useLanguage();
+  const copy = COPY[lang];
 
   const products   = cat === "todo" ? SHOP_PRODUCTS : SHOP_PRODUCTS.filter((p) => p.cat === cat);
   const cartCount  = cart.reduce((n, i) => n + i.qty, 0);
@@ -63,18 +111,17 @@ export default function TiendaPage() {
           {/* Left — copy */}
           <div>
             <p className="mb-6 text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)]">
-              Tienda · Lo que se llevan a casa
+              {copy.heroBadge}
             </p>
             <h1 className="mb-6 font-serif text-[clamp(2.5rem,4.5vw,4rem)] font-light leading-[1.05] tracking-[-0.01em] text-[var(--color-text)]">
-              La sesión<br />
-              termina. La{" "}
-              <em className="not-italic font-normal text-[var(--color-bronze)]">calma</em>
+              {copy.heading1}<br />
+              {copy.heading2}{" "}
+              <em className="not-italic font-normal text-[var(--color-bronze)]">{copy.headingAccent}</em>
               <br />
-              se queda.
+              {copy.heading3}
             </h1>
             <p className="max-w-[480px] text-[17px] leading-[1.65] text-[var(--color-text-muted)]">
-              Velas, aceites y objetos pequeños que prolongan el trabajo de la sesión en casa.
-              Curados a mano, en cantidades pequeñas.
+              {copy.desc}
             </p>
           </div>
 
@@ -88,7 +135,7 @@ export default function TiendaPage() {
                 }`}
                 style={{ background: `linear-gradient(135deg, ${toneVar[p.tone]} 0%, #FAFAF8 100%)` }}
               >
-                {p.name.es.charAt(0)}
+                {p.name[lang].charAt(0)}
               </div>
             ))}
           </div>
@@ -112,7 +159,7 @@ export default function TiendaPage() {
                     : "bg-transparent text-[var(--color-text)] hover:bg-[var(--color-background-soft)]"
                 }`}
               >
-                {c.es}
+                {c[lang]}
               </button>
             ))}
           </div>
@@ -122,7 +169,7 @@ export default function TiendaPage() {
             onClick={() => setCartOpen(true)}
             className="inline-flex cursor-pointer items-center gap-2.5 rounded-full border border-[rgba(30,41,59,0.15)] bg-[var(--color-background)] px-4 py-2.5 font-sans text-[13px] font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-background-soft)]"
           >
-            Cesta
+            {copy.cart}
             {cartCount > 0 && (
               <span className="min-w-5 rounded-full bg-[var(--color-bronze)] px-2 py-0.5 text-center text-[11px] tabular-nums text-white">
                 {cartCount}
@@ -150,19 +197,18 @@ export default function TiendaPage() {
 
           <div>
             <p className="mb-4 text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)]">
-              Entrega en clínica
+              {copy.logisticsOverline}
             </p>
             <h2 className="mb-5 font-serif text-[clamp(1.75rem,2.6vw,2.5rem)] font-normal leading-[1.2] text-[var(--color-text)]">
-              Compra local.
+              {copy.logisticsHeading}
             </h2>
             <p className="max-w-[520px] text-base leading-[1.65] text-[var(--color-text-muted)]">
-              Todos nuestros productos están disponibles exclusivamente para venta y entrega
-              presencial en nuestra clínica en Tecate. No realizamos envíos por paquetería.
+              {copy.logisticsDesc}
             </p>
           </div>
 
           <ul className="flex list-none flex-col gap-3.5 p-0 text-[14px] text-[var(--color-text)]">
-            {LOGISTICS_ITEMS.map((item) => (
+            {copy.logisticsItems.map((item) => (
               <li key={item} className="flex items-start gap-3">
                 <Check
                   size={16}
@@ -201,7 +247,7 @@ export default function TiendaPage() {
             {/* Header */}
             <div className="flex items-center justify-between border-b border-[rgba(30,41,59,0.08)] px-8 py-7">
               <h3 className="m-0 font-serif text-2xl font-normal text-[var(--color-text)]">
-                Tu cesta
+                {copy.cartTitle}
               </h3>
               <button
                 onClick={() => setCartOpen(false)}
@@ -216,10 +262,10 @@ export default function TiendaPage() {
               {cart.length === 0 ? (
                 <div className="py-20 text-center">
                   <p className="mb-2 font-serif text-[22px] text-[var(--color-text)]">
-                    La cesta está vacía.
+                    {copy.cartEmpty}
                   </p>
                   <p className="text-[14px] text-[var(--color-text-muted)]">
-                    Aún no has elegido nada.
+                    {copy.cartEmptySub}
                   </p>
                 </div>
               ) : (
@@ -230,7 +276,7 @@ export default function TiendaPage() {
                   >
                     <div>
                       <p className="mb-1 font-serif text-[17px] text-[var(--color-text)]">
-                        {item.name.es}
+                        {item.name[lang]}
                       </p>
                       <p className="font-sans text-[12px] tabular-nums text-[var(--color-text-muted)]">
                         ×{item.qty} · {formatPrice(item.price * item.qty, currency)}
@@ -240,7 +286,7 @@ export default function TiendaPage() {
                       onClick={() => removeFromCart(item.id)}
                       className="cursor-pointer border-none bg-transparent text-[11px] uppercase tracking-[0.14em] text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
                     >
-                      Quitar
+                      {copy.removeItem}
                     </button>
                   </div>
                 ))
@@ -264,10 +310,10 @@ export default function TiendaPage() {
                   onClick={() => alert("Conexión con Stripe / WhatsApp aquí.")}
                   className="w-full justify-center"
                 >
-                  Finalizar compra
+                  {copy.checkout}
                 </Button>
                 <p className="mt-3.5 text-center text-[12px] text-[var(--color-text-muted)]">
-                  Envío e impuestos calculados al finalizar.
+                  {copy.checkoutNote}
                 </p>
               </div>
             )}

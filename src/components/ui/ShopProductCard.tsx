@@ -2,6 +2,7 @@
 
 import type { ShopProduct, ProductTone } from "@/data/shop";
 import { useClinicSettings } from "@/context/ClinicSettingsContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { formatPrice } from "@/lib/format";
 
 // Tone → surface CSS variable (bronze uses a soft tint since no --color-surface-bronze exists)
@@ -23,7 +24,8 @@ interface ShopProductCardProps {
 export function ShopProductCard({ p, onOpen, style = "editorial" }: ShopProductCardProps) {
   const { settings } = useClinicSettings();
   const { currency } = settings;
-  const initial = p.name.es.charAt(0);
+  const { lang } = useLanguage();
+  const initial = p.name[lang].charAt(0);
   const swatch  = toneVar[p.tone];
 
   if (style === "polaroid") {
@@ -39,7 +41,7 @@ export function ShopProductCard({ p, onOpen, style = "editorial" }: ShopProductC
           {initial}
         </div>
         <div className="text-center">
-          <p className="mb-1 font-serif text-[18px] text-[var(--color-text)]">{p.name.es}</p>
+          <p className="mb-1 font-serif text-[18px] text-[var(--color-text)]">{p.name[lang]}</p>
           <p className="font-sans text-[11px] tracking-[0.08em] text-[var(--color-text-muted)]">
             {formatPrice(p.price, currency)}
           </p>
@@ -61,7 +63,7 @@ export function ShopProductCard({ p, onOpen, style = "editorial" }: ShopProductC
           {initial}
         </div>
         <div className="flex items-baseline justify-between gap-3 px-1">
-          <span className="font-serif text-[19px] font-normal text-[var(--color-text)]">{p.name.es}</span>
+          <span className="font-serif text-[19px] font-normal text-[var(--color-text)]">{p.name[lang]}</span>
           <span className="shrink-0 tabular-nums text-[13px] text-[var(--color-text-muted)]">
             {formatPrice(p.price, currency)}
           </span>
@@ -87,10 +89,10 @@ export function ShopProductCard({ p, onOpen, style = "editorial" }: ShopProductC
       {/* Content */}
       <div className="flex flex-1 flex-col gap-2.5 p-[22px]">
         <h3 className="m-0 font-serif text-[21px] font-normal leading-[1.2] text-[var(--color-text)]">
-          {p.name.es}
+          {p.name[lang]}
         </h3>
         <p className="m-0 flex-1 text-[13px] leading-[1.55] text-[var(--color-text-muted)]">
-          {p.story.es}
+          {p.story[lang]}
         </p>
         <div className="mt-1.5 flex items-center justify-between border-t border-[rgba(30,41,59,0.06)] pt-3.5">
           <span className="font-serif text-xl text-[var(--color-text)]">
