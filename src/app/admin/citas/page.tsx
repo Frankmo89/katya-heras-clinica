@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   CalendarDays, Plus, Trash2, Check, AlertCircle,
-  MessageCircle, Search, X, ChevronRight,
+  MessageCircle, Search, X, ChevronRight, ChevronLeft,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { SERVICES } from "@/data/services";
@@ -13,6 +13,23 @@ import { SERVICES } from "@/data/services";
 function getTodayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Returns the ISO YYYY-MM-DD string for any Date object. */
+function dateToIso(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Returns an array of (null | 1-based day number) representing a calendar grid
+ * for the given year/month, starting on Sunday.
+ */
+function buildCalendarCells(year: number, month: number): (number | null)[] {
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth  = new Date(year, month + 1, 0).getDate();
+  const cells: (number | null)[] = Array<null>(firstWeekday).fill(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  return cells;
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -114,6 +131,10 @@ export default function CitasPage() {
   const todayFilter    = searchParams.get("filter") === "today";
   const [activeTab, setActiveTab] = useState<"agenda" | "citas">(todayFilter ? "citas" : "agenda");
   const [feedback,  setFeedback]  = useState<Feedback | null>(null);
+
+  // Calendar state
+  const [selectedDate,  setSelectedDate]  = useState<Date | null>(todayFilter ? new Date() : null);
+  const [currentMonth,  setCurrentMonth]  = useState<Date>(new Date());
 
   const showFeedback = (fb: Feedback) => {
     setFeedback(fb);
@@ -358,9 +379,11 @@ export default function CitasPage() {
           .slice(0, 8)
       : [];
 
+  const selectedIso = selectedDate ? dateToIso(selectedDate) : null;
+
   const filteredBookings = (bookings ?? []).filter(
     (b) =>
-      (!todayFilter || b.date === getTodayIso()) &&
+      (selectedIso === null || b.date === selectedIso) &&
       (
         search.trim() === "" ||
         (b.patient_name?.toLowerCase() ?? "").includes(search.toLowerCase().trim())
@@ -548,21 +571,104 @@ export default function CitasPage() {
       ══════════════════════════════════════════════════════════════ */}
       {activeTab === "citas" && (
         <>
-          {/* Today-filter banner */}
-          {todayFilter && (
-            <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-[rgba(192,138,94,0.2)] bg-[rgba(192,138,94,0.06)] px-5 py-3">
-              <p className="text-sm font-medium text-[var(--color-bronze)]">
-                Mostrando solo las citas de hoy
-              </p>
-              <button
-                onClick={() => router.replace("/admin/citas")}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--color-bronze)] transition-colors hover:bg-[rgba(192,138,94,0.12)]"
-              >
-                <X size={11} strokeWidth={2.5} />
-                Ver todas las citas
-              </button>
-            </div>
-          )}
+          {/* ── Mini calendar ────────────────────────────────────── */}
+          {(() => {
+            const year  = currentMonth.getFullYear();
+            const month = currentMonth.getMonth();
+            const cells = buildCalendarCells(year, month);
+            const todayIso = getTodayIso();
+            // Build a Set of ISO dates that have at least one booking
+            const bookedDates = new Set(bookings.map((b) => b.date));
+            const monthLabel = currentMonth.toLocaleDateString("es-MX", {
+              month: "long", year: "numeric",
+            });
+            return (
+              <div className="mb-6 rounded-3xl bg-white border border-slate-100 shadow-[0_4px_24px_rgba(0,0,0,0.06)] p-5">
+                {/* Month nav */}
+                <div className="mb-3 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentMonth(new Date(year, month - 1, 1))}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="Mes anterior"
+                  >
+                    <ChevronLeft size={15} strokeWidth={2} />
+                  </button>
+                  <span className="text-sm font-semibold capitalize text-slate-700">{monthLabel}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentMonth(new Date(year, month + 1, 1))}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="Mes siguiente"
+                  >
+                    <ChevronRight size={15} strokeWidth={2} />
+                  </button>
+                </div>
+
+                {/* Weekday headers */}
+                <div className="grid grid-cols-7 mb-1">
+                  {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((d) => (
+                    <div key={d} className="py-1 text-center text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                      {d}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Day cells */}
+                <div className="grid grid-cols-7 gap-y-0.5">
+                  {cells.map((day, i) => {
+                    if (!day) return <div key={i} />;
+                    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                    const isSelected = selectedIso === iso;
+                    const isToday    = iso === todayIso;
+                    const hasBooking = bookedDates.has(iso);
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setSelectedDate(isSelected ? null : new Date(year, month, day))}
+                        className={`relative mx-auto flex h-8 w-8 flex-col items-center justify-center rounded-full text-[13px] font-medium transition-colors ${
+                          isSelected
+                            ? "bg-[var(--color-bronze)] text-white"
+                            : isToday
+                            ? "font-semibold text-[var(--color-bronze)] ring-1 ring-[var(--color-bronze)]"
+                            : "text-slate-700 hover:bg-slate-100"
+                        }`}
+                        aria-label={iso}
+                      >
+                        <span className="leading-none">{day}</span>
+                        {hasBooking && (
+                          <span
+                            className={`absolute bottom-0.5 h-1 w-1 rounded-full ${
+                              isSelected ? "bg-white/70" : "bg-[var(--color-bronze)]"
+                            }`}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Selected-day label / clear */}
+                {selectedDate && (
+                  <div className="mt-3 flex items-center justify-between border-t border-slate-50 pt-3">
+                    <p className="text-xs text-slate-500 capitalize">
+                      {selectedDate.toLocaleDateString("es-MX", {
+                        weekday: "long", day: "numeric", month: "long",
+                      })}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedDate(null); router.replace("/admin/citas"); }}
+                      className="inline-flex items-center gap-1 text-xs text-slate-400 transition-colors hover:text-slate-600"
+                    >
+                      <X size={11} strokeWidth={2} /> Limpiar
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Toolbar */}
           <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -610,11 +716,13 @@ export default function CitasPage() {
                   <CalendarDays size={24} className="text-[var(--color-bronze)]" strokeWidth={1.5} />
                 </div>
                 <p className="mb-1 text-sm font-medium text-slate-700">
-                  {search ? "Sin resultados" : "No hay citas"}
+                  {search ? "Sin resultados" : selectedIso ? "Sin citas este día" : "No hay citas"}
                 </p>
                 <p className="max-w-xs text-xs leading-relaxed text-[var(--color-text-muted)]">
                   {search
                     ? `No se encontraron citas para "${search}".`
+                    : selectedIso
+                    ? "No hay citas programadas para este día."
                     : "Las reservas de las pacientes aparecerán aquí."}
                 </p>
               </div>
