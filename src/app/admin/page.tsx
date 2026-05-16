@@ -33,7 +33,7 @@ const CARDS = [
     suffix: "agendadas",
     icon:   CalendarCheck,
     bg:     "var(--color-surface-pink)",
-    href:   "/admin/citas",
+    href:   "/admin/citas?filter=today",
   },
   {
     label:  "Citas Este Mes",

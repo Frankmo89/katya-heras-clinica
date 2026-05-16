@@ -1,12 +1,19 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   CalendarDays, Plus, Trash2, Check, AlertCircle,
   MessageCircle, Search, X, ChevronRight,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { SERVICES } from "@/data/services";
+
+// ── Today ISO date ─────────────────────────────────────────────────────────
+function getTodayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 type AdminSlot = {
@@ -102,7 +109,10 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function CitasPage() {
-  const [activeTab, setActiveTab] = useState<"agenda" | "citas">("agenda");
+  const searchParams   = useSearchParams();
+  const router         = useRouter();
+  const todayFilter    = searchParams.get("filter") === "today";
+  const [activeTab, setActiveTab] = useState<"agenda" | "citas">(todayFilter ? "citas" : "agenda");
   const [feedback,  setFeedback]  = useState<Feedback | null>(null);
 
   const showFeedback = (fb: Feedback) => {
@@ -350,8 +360,11 @@ export default function CitasPage() {
 
   const filteredBookings = (bookings ?? []).filter(
     (b) =>
-      search.trim() === "" ||
-      (b.patient_name?.toLowerCase() ?? "").includes(search.toLowerCase().trim())
+      (!todayFilter || b.date === getTodayIso()) &&
+      (
+        search.trim() === "" ||
+        (b.patient_name?.toLowerCase() ?? "").includes(search.toLowerCase().trim())
+      )
   );
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -535,6 +548,22 @@ export default function CitasPage() {
       ══════════════════════════════════════════════════════════════ */}
       {activeTab === "citas" && (
         <>
+          {/* Today-filter banner */}
+          {todayFilter && (
+            <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-[rgba(192,138,94,0.2)] bg-[rgba(192,138,94,0.06)] px-5 py-3">
+              <p className="text-sm font-medium text-[var(--color-bronze)]">
+                Mostrando solo las citas de hoy
+              </p>
+              <button
+                onClick={() => router.replace("/admin/citas")}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--color-bronze)] transition-colors hover:bg-[rgba(192,138,94,0.12)]"
+              >
+                <X size={11} strokeWidth={2.5} />
+                Ver todas las citas
+              </button>
+            </div>
+          )}
+
           {/* Toolbar */}
           <div className="mb-6 flex flex-wrap items-center gap-3">
             {/* Search */}
