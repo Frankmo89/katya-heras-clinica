@@ -6,6 +6,7 @@ import {
   CalendarDays, Plus, Trash2, Check, AlertCircle,
   MessageCircle, Search, X, ChevronRight, ChevronLeft,
 } from "lucide-react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { SERVICES } from "@/data/services";
 
@@ -758,28 +759,48 @@ export default function CitasPage() {
                       </div>
 
                       {/* Patient */}
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="truncate text-sm font-medium text-slate-800">
-                            {booking.patient_name}
-                          </p>
-                          {booking.is_manual && (
-                            <span className="shrink-0 rounded-full bg-[rgba(192,138,94,0.10)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-medium text-[var(--color-bronze)]">
-                              Manual
-                            </span>
-                          )}
-                        </div>
-                        {booking.patient_email && (
-                          <p className="truncate text-xs text-[var(--color-text-muted)]">
-                            {booking.patient_email}
-                          </p>
-                        )}
-                        {booking.notes && (
-                          <p className="mt-0.5 truncate text-xs italic text-slate-400 lg:hidden">
-                            {booking.notes}
-                          </p>
-                        )}
-                      </div>
+                      {(() => {
+                        const matchedPatient = booking.patient_email
+                          ? patients.find(
+                              (p) =>
+                                p.email &&
+                                p.email.toLowerCase() === booking.patient_email!.toLowerCase()
+                            )
+                          : undefined;
+                        return (
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              {matchedPatient ? (
+                                <Link
+                                  href={`/admin/pacientes/${matchedPatient.id}`}
+                                  className="truncate text-sm font-medium text-slate-800 underline-offset-2 hover:text-[var(--color-bronze)] hover:underline transition-colors"
+                                >
+                                  {booking.patient_name}
+                                </Link>
+                              ) : (
+                                <p className="truncate text-sm font-medium text-slate-800">
+                                  {booking.patient_name}
+                                </p>
+                              )}
+                              {booking.is_manual && (
+                                <span className="shrink-0 rounded-full bg-[rgba(192,138,94,0.10)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-medium text-[var(--color-bronze)]">
+                                  Manual
+                                </span>
+                              )}
+                            </div>
+                            {booking.patient_email && (
+                              <p className="truncate text-xs text-[var(--color-text-muted)]">
+                                {booking.patient_email}
+                              </p>
+                            )}
+                            {booking.notes && (
+                              <p className="mt-1 text-xs italic text-gray-600">
+                                {booking.notes}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Service */}
                       <p className="truncate text-sm text-slate-600 hidden lg:block">{svcName}</p>
