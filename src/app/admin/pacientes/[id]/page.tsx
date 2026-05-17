@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Activity,
   User,
+  Sparkles,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -38,6 +39,12 @@ interface PatientHistory {
   pathological_history: string | null;
   family_history: string | null;
   emotional_timeline: string | null;
+}
+
+interface AiAnalysis {
+  resumen: string;
+  observaciones: string[];
+  recomendaciones: string[];
 }
 
 interface PhysicalEvaluation {
@@ -167,11 +174,14 @@ export default function PacienteDetailPage() {
   const router = useRouter();
   const id = params.id;
 
-  const [patient,  setPatient]  = useState<Patient | null>(null);
-  const [history,  setHistory]  = useState<PatientHistory | null>(null);
-  const [eval_,    setEval]     = useState<PhysicalEvaluation | null>(null);
-  const [loading,  setLoading]  = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const [patient,     setPatient]     = useState<Patient | null>(null);
+  const [history,     setHistory]     = useState<PatientHistory | null>(null);
+  const [eval_,       setEval]        = useState<PhysicalEvaluation | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [notFound,    setNotFound]    = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiData,      setAiData]      = useState<AiAnalysis | null>(null);
+  const [aiError,     setAiError]     = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -211,6 +221,37 @@ export default function PacienteDetailPage() {
     }
     load();
   }, [id]);
+
+  // ── AI Clinical Summary ─────────────────────────────────────────────────
+  async function generateClinicalSummary() {
+    if (!patient?.email) return;
+    setIsAnalyzing(true);
+    setAiError(null);
+    setAiData(null);
+    try {
+      const res = await fetch("/api/ai/resumen-clinico", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientEmail: patient.email,
+          patientName:  patient.full_name,
+        }),
+      });
+      if (!res.ok) throw new Error(`Error del servidor (${res.status})`);
+      const json = await res.json() as Partial<AiAnalysis> & { error?: string };
+      if (json.error) throw new Error(json.error);
+      if (!json.resumen) throw new Error("La IA no devolvió un análisis válido.");
+      setAiData({
+        resumen:         json.resumen,
+        observaciones:   json.observaciones  ?? [],
+        recomendaciones: json.recomendaciones ?? [],
+      });
+    } catch (err: unknown) {
+      setAiError(err instanceof Error ? err.message : "Error desconocido.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
 
   // Parse serialised JSON columns
   const pathHx = tryParse<{
@@ -335,6 +376,109 @@ export default function PacienteDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Análisis Clínico con IA ────────────────────────────────────── */}
+      {patient.email && (
+        <div className="rounded-3xl border border-slate-100 bg-white p-8 shadow-[0_2px_16px_rgba(0,0,0,0.04)]">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.2em] font-medium text-[var(--color-bronze)] mb-1">
+                Inteligencia Artificial
+              </p>
+              <h2 className="font-serif text-xl text-slate-800">Análisis Clínico con IA</h2>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Genera un resumen automático basado en el historial de citas completadas.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={generateClinicalSummary}
+              disabled={isAnalyzing}
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[var(--color-bronze)] px-6 py-3 text-sm font-medium text-white transition hover:bg-[var(--color-bronze-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isAnalyzing ? (
+                <>
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                  </svg>
+                  Analizando…
+                </>
+              ) : (
+                <>
+                  <Sparkles size={15} strokeWidth={1.75} />
+                  Generar Análisis Clínico
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Error */}
+          {aiError && (
+            <div className="mt-6 rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-sm text-red-600">
+              {aiError}
+            </div>
+          )}
+
+          {/* Result card */}
+          {aiData && (
+            <div className="mt-6 rounded-2xl border border-amber-100 bg-amber-50/70 px-7 py-6 space-y-6">
+              {/* Header badge */}
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} className="text-amber-600" strokeWidth={1.75} />
+                <span className="text-[10px] uppercase tracking-[0.18em] font-semibold text-amber-700">
+                  Generado por IA · Groq / Llama 3
+                </span>
+              </div>
+
+              {/* Resumen */}
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.16em] font-semibold text-amber-700 mb-2">
+                  Resumen de Evolución
+                </p>
+                <p className="text-[15px] leading-relaxed text-slate-800">{aiData.resumen}</p>
+              </div>
+
+              {/* Two-column lists */}
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                {aiData.observaciones.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.16em] font-semibold text-amber-700 mb-3">
+                      Patrones Detectados
+                    </p>
+                    <ul className="space-y-2">
+                      {aiData.observaciones.map((obs, i) => (
+                        <li key={i} className="flex items-start gap-2.5 text-[14px] leading-snug text-slate-700">
+                          <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                          {obs}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {aiData.recomendaciones.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.16em] font-semibold text-amber-700 mb-3">
+                      Recomendaciones para la Próxima Sesión
+                    </p>
+                    <ul className="space-y-2">
+                      {aiData.recomendaciones.map((rec, i) => (
+                        <li key={i} className="flex items-start gap-2.5 text-[14px] leading-snug text-slate-700">
+                          <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                          {rec}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] italic text-amber-600/70">
+                Este análisis es orientativo y no reemplaza el criterio clínico profesional.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Historial Clínico ─────────────────────────────────────────── */}
       {history && (
