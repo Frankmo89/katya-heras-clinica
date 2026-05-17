@@ -143,32 +143,47 @@ export default function NuevoPacientePage() {
     setLoading(true);
     setError(null);
 
-    const { data: patient, error: pErr } = await supabase
-      .from("patients")
-      .insert([{
-        full_name:         datos.full_name.trim(),
-        birth_date:        datos.birth_date   || null,
-        sex:               datos.sex          || null,
-        phone:             datos.phone.trim() || null,
-        email:             datos.email.trim() || null,
-        address:           datos.address.trim() || null,
-        occupation:        datos.occupation.trim() || null,
-        civil_status:      datos.civil_status || null,
-        emergency_contact: datos.emergency_contact.trim() || null,
-        emergency_phone:   datos.emergency_phone.trim() || null,
-      }])
-      .select()
-      .single();
+    // ── Step 1: Upsert patient ────────────────────────────────────────────────
+    // When a phone number is provided and a patient already has that number,
+    // update their record and reuse their id — avoids patients_phone_key violations.
+    const patientPayload = {
+      full_name:         datos.full_name.trim(),
+      birth_date:        datos.birth_date   || null,
+      sex:               datos.sex          || null,
+      phone:             datos.phone.trim() || null,
+      email:             datos.email.trim() || null,
+      address:           datos.address.trim() || null,
+      occupation:        datos.occupation.trim() || null,
+      civil_status:      datos.civil_status || null,
+      emergency_contact: datos.emergency_contact.trim() || null,
+      emergency_phone:   datos.emergency_phone.trim() || null,
+    };
 
-    if (pErr || !patient) {
-      setError(pErr?.message ?? "No se pudo guardar el paciente. Verifica la conexión.");
+    const patientResult = datos.phone.trim()
+      ? await supabase
+          .from("patients")
+          .upsert(patientPayload, { onConflict: "phone" })
+          .select("id")
+          .single()
+      : await supabase
+          .from("patients")
+          .insert([patientPayload])
+          .select("id")
+          .single();
+
+    if (patientResult.error || !patientResult.data) {
+      setError(patientResult.error?.message ?? "No se pudo guardar el paciente. Verifica la conexión.");
       setLoading(false);
       return;
     }
 
+    // ── Step 2: Resolve patient ID ─────────────────────────────────────────
+    const patientId = patientResult.data.id;
+
     const [hErr, eErr] = await Promise.all([
+      // ── Step 3: Insert clinical history ─────────────────────────────────
       supabase.from("patient_histories").insert([{
-        patient_id: patient.id,
+        patient_id: patientId,
         // ── Flat text columns (migration 0016) ──────────────────────────
         // Serialised as JSON strings so all sub-fields are preserved
         // in the text column and can be parsed when reading back.
@@ -201,7 +216,7 @@ export default function NuevoPacientePage() {
         observations: antecedentes.chief_complaint.trim() || null,
       }]).then((r) => r.error),
       supabase.from("physical_evaluations").insert([{
-        patient_id:               patient.id,
+        patient_id:               patientId,
         weight:                   exploracion.weight      ? parseFloat(exploracion.weight)      : null,
         height:                   exploracion.height      ? parseFloat(exploracion.height)      : null,
         bmi:                      bmi                     ? parseFloat(bmi)                     : null,
