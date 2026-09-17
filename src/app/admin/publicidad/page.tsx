@@ -7,6 +7,8 @@ import {
   Copy,
   Check,
   Sparkles,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 
 type FolderFilter = "all" | "escuela" | "libros" | "tesis";
@@ -35,6 +37,7 @@ interface Pack {
   facebook_post?: { texto?: string; cta?: string };
   disclaimer?: string;
   citations?: { title?: string; source_folder?: string }[];
+  eventId?: string;
   error?: string;
 }
 
@@ -99,6 +102,7 @@ export default function PublicidadPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pack, setPack] = useState<Pack | null>(null);
+  const [rated, setRated] = useState<-1 | 1 | null>(null);
 
   async function generate(t?: string) {
     const final = (t ?? topic).trim();
@@ -107,6 +111,7 @@ export default function PublicidadPage() {
     setLoading(true);
     setError(null);
     setPack(null);
+    setRated(null);
     try {
       const res = await fetch("/api/ai/publicidad", {
         method: "POST",
@@ -346,6 +351,52 @@ export default function PublicidadPage() {
               </ul>
             </Card>
           )}
+
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] text-slate-500">¿Sirvió esta campaña?</span>
+            <button
+              type="button"
+              disabled={rated !== null}
+              onClick={async () => {
+                setRated(1);
+                await fetch("/api/ai/feedback", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    rating: 1,
+                    source: "publicidad",
+                    relatedEventId: pack.eventId,
+                    topicOrQuestion: pack.topic,
+                    outputPreview: pack.articulo_corto,
+                  }),
+                });
+              }}
+              className={`rounded-lg border px-2.5 py-1 text-[12px] ${rated === 1 ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+            >
+              <ThumbsUp size={12} className="inline" /> Sí
+            </button>
+            <button
+              type="button"
+              disabled={rated !== null}
+              onClick={async () => {
+                setRated(-1);
+                await fetch("/api/ai/feedback", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    rating: -1,
+                    source: "publicidad",
+                    relatedEventId: pack.eventId,
+                    topicOrQuestion: pack.topic,
+                    outputPreview: pack.articulo_corto,
+                  }),
+                });
+              }}
+              className={`rounded-lg border px-2.5 py-1 text-[12px] ${rated === -1 ? "border-red-300 bg-red-50 text-red-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+            >
+              <ThumbsDown size={12} className="inline" /> No
+            </button>
+          </div>
 
           {pack.disclaimer && (
             <p className="text-[11px] italic text-slate-400">{pack.disclaimer}</p>
