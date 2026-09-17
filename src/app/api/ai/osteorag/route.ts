@@ -16,7 +16,7 @@ let cached: { token: string; expMs: number; email: string } | null = null;
 
 async function getOsteoBearer(base: string): Promise<
   | { ok: true; token: string }
-  | { ok: false; error: string; status: number }
+  | { ok: false; error: string; status: number; present?: Record<string, boolean> }
 > {
   const email = (process.env.OSTEORAG_EMAIL || "").trim();
   const password = (process.env.OSTEORAG_PASSWORD || "").trim();
@@ -106,11 +106,20 @@ async function getOsteoBearer(base: string): Promise<
     };
   }
 
+  const present = {
+    OSTEORAG_EMAIL: Boolean((process.env.OSTEORAG_EMAIL || "").trim()),
+    OSTEORAG_PASSWORD: Boolean((process.env.OSTEORAG_PASSWORD || "").trim()),
+    OSTEORAG_BEARER_TOKEN: Boolean((process.env.OSTEORAG_BEARER_TOKEN || "").trim()),
+    OSTEORAG_BASIC_USER: Boolean((process.env.OSTEORAG_BASIC_USER || "").trim()),
+    OSTEORAG_BASIC_PASS: Boolean((process.env.OSTEORAG_BASIC_PASS || "").trim()),
+    OSTEORAG_BASE_URL: Boolean((process.env.OSTEORAG_BASE_URL || "").trim()),
+  };
   return {
     ok: false,
     error:
       "OsteoRAG no está configurado. En Vercel pon OSTEORAG_EMAIL + OSTEORAG_PASSWORD (login de OsteoRAG).",
     status: 503,
+    present,
   };
 }
 
@@ -141,7 +150,11 @@ export async function POST(request: Request) {
     const auth = await getOsteoBearer(base);
     if (!auth.ok) {
       return NextResponse.json(
-        { error: auth.error, code: "OSTEORAG_AUTH" },
+        {
+          error: auth.error,
+          code: "OSTEORAG_AUTH",
+          present: "present" in auth ? auth.present : undefined,
+        },
         { status: auth.status },
       );
     }
