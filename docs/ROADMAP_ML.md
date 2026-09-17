@@ -20,51 +20,45 @@ Asistente profesional para osteopatía / masaje / kinesiotape:
 | OsteoRAG desde ficha paciente | `/admin/pacientes/[id]` + `POST /api/ai/osteorag` |
 | Env Vercel proyecto (no Shared) | `OSTEORAG_BASE_URL`, `OSTEORAG_EMAIL`, `OSTEORAG_PASSWORD` |
 | Módulo Publicidad | `/admin/publicidad` + `POST /api/ai/publicidad` |
-| Eval corpus (14/14 PASS vía Worker) | notas internas 2026-09-17 |
-| Migración tablas Opus (Supabase `hlotbgirhjbnppdtllkv`) | `ai_marketing_events`, `ai_clinical_events` (sin `patient_id`), `ai_clinical_audit` |
+| Eval corpus (14/14 PASS vía Worker) | notas 2026-09-17 |
+| Migración tablas Opus (Supabase clínica) | `ai_marketing_events`, `ai_clinical_events` (sin `patient_id`), `ai_clinical_audit` |
 | `ai_learning_events` | **DEPRECATED** — no escribir filas nuevas |
 
 ## En curso (P0 — refactor loop Opus)
 
-1. Partir escritura de app: marketing vs clinical vs audit
+1. Partir escritura: marketing vs clinical vs audit
 2. Campos: `prompt_version`, `model`, `output_draft`, `output_published`
-3. Publicidad: al copiar → `publish`; a la semana → `outcome` (leads/citas)
-4. 👎 envía `downvoted_sources` (priorizar sobre reforzar 👍)
+3. Publicidad: copiar → `publish`; semana → `outcome` (leads/citas)
+4. 👎 → `downvoted_sources` (priorizar sobre reforzar 👍)
 5. Quitar diagnóstico `present` del API OsteoRAG
-6. Fallback de modelos Groq en Publicidad
+6. Fallback modelos Groq en Publicidad
 7. Página Insights en admin
-8. Eval 5 temas distintos en Publicidad (diversidad de estrategia)
+8. Eval 5 temas distintos en Publicidad
 
 ## Siguiente (P1)
 
-- Panel Insights con filtros y export
-- Re-ranking / demote de chunks con 👎 (OsteoRAG Worker)
-- Auth unificada clínica ↔ OsteoRAG (dejar de depender solo de env Basic/email en Vercel)
+- Insights con filtros/export
+- Demote de chunks con 👎 en OsteoRAG Worker
+- Auth unificada clínica ↔ OsteoRAG
 - Publicidad: tonos + calendario 7 días + idea visual
-- Noticias/tendencias **separadas** del corpus (etiqueta clara)
-- Blindar proxy ante Vercel Security Checkpoint (admin autenticado / allowlist)
+- Noticias/tendencias separadas del corpus
+- Blindar proxy ante Vercel Security Checkpoint
 
-## Más adelante (P2 — ML “de verdad”)
+## Más adelante (P2)
 
-- Gold set 30–50 Q&A aprobadas por Katya + eval en cada deploy
-- Outcome marketing ligado a CRM (citas reales)
-- Fine-tune solo con cientos de ratings/diffs útiles (no antes)
-- Retención / consentimiento / políticas por tabla
+- Gold set 30–50 Q&A + eval por deploy
+- Outcome marketing ligado a CRM
+- Fine-tune solo con muchos diffs/ratings útiles
+- Retención / consentimiento por tabla
 
-## Principios (Opus + acuerdo)
+## Principios
 
-1. **Dos tablas ML** (marketing ≠ clínica) — RLS y retención distintas
-2. **Sin `patient_id` en datasets ML** — trazabilidad clínica solo en `ai_clinical_audit` / ficha
-3. **Señal útil = diff draft → published** (y outcomes), no solo 👍
-4. **Priorizar 👎** para sacar fuentes malas (evitar cámara de eco)
-5. **Siempre `prompt_version` + `model`** para atribuir mejoras
-6. Validar Publicidad con **≥5 temas** distintos, no una sola campaña
-
-## Cómo trabajar esto
-
-- Este archivo es la fuente de orden en el repo
-- PRs deben referenciar la fase (P0 / P1 / P2)
-- No mezclar “biblioteca de PDFs en admin” — el corpus vive en OsteoRAG
+1. Dos tablas ML (marketing ≠ clínica)
+2. Sin `patient_id` en datasets ML (audit aparte)
+3. Señal útil = draft → published (+ outcomes)
+4. Priorizar 👎 antes que reforzar 👍
+5. Siempre `prompt_version` + `model`
+6. Validar Publicidad con ≥5 temas distintos
 
 ## Enlaces
 
