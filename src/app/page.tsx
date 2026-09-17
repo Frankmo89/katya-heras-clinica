@@ -31,6 +31,7 @@ export default async function HomePage() {
         heroTitle={settings?.hero_title ?? null}
         heroSubtitle={settings?.hero_subtitle ?? null}
         heroImageUrl={settings?.hero_image_url ?? null}
+        heroVideoUrl={process.env.NEXT_PUBLIC_HERO_VIDEO_URL ?? null}
       />
       <HomeServicesSection services={services} />
       <HomePhilosophySection
@@ -41,4 +42,3 @@ export default async function HomePage() {
     </div>
   );
 }
-
