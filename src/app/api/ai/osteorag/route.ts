@@ -106,6 +106,8 @@ async function getOsteoBearer(base: string): Promise<
     };
   }
 
+  const envKeys = Object.keys(process.env);
+  const osteoKeys = envKeys.filter((k) => k.includes("OSTEO") || k.includes("osteo"));
   const present = {
     OSTEORAG_EMAIL: Boolean((process.env['OSTEORAG_EMAIL'] || "").trim()),
     OSTEORAG_PASSWORD: Boolean((process.env['OSTEORAG_PASSWORD'] || "").trim()),
@@ -113,6 +115,11 @@ async function getOsteoBearer(base: string): Promise<
     OSTEORAG_BASIC_USER: Boolean((process.env['OSTEORAG_BASIC_USER'] || "").trim()),
     OSTEORAG_BASIC_PASS: Boolean((process.env['OSTEORAG_BASIC_PASS'] || "").trim()),
     OSTEORAG_BASE_URL: Boolean((process.env['OSTEORAG_BASE_URL'] || "").trim()),
+    NEXT_PUBLIC_SUPABASE_URL: Boolean((process.env['NEXT_PUBLIC_SUPABASE_URL'] || "").trim()),
+    SUPABASE_SERVICE_ROLE_KEY: Boolean((process.env['SUPABASE_SERVICE_ROLE_KEY'] || "").trim()),
+    GROQ_API_KEY: Boolean((process.env['GROQ_API_KEY'] || "").trim()),
+    envKeyCount: envKeys.length,
+    osteoKeyNames: osteoKeys,
   };
   return {
     ok: false,
