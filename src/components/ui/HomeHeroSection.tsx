@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useLanguage } from "@/context/LanguageContext";
 
@@ -28,18 +28,8 @@ const COPY = {
   },
 } as const;
 
-/** Bare-hands massage clips (no latex). Thai stretch first, then variety. Free Pexels/Mixkit. */
-/** Extreme close-ups only — bare hands, no faces, no latex gloves. */
-const HERO_CLIPS = [
-  "https://assets.mixkit.co/videos/14781/14781-720.mp4", // back + oil (hands only)
-  "https://assets.mixkit.co/videos/24136/24136-720.mp4", // back teal spa (hands only)
-  "https://videos.pexels.com/video-files/11492176/11492176-hd_1280_720_50fps.mp4", // back hands extreme CU
-  "https://videos.pexels.com/video-files/11492183/11492183-hd_1280_720_50fps.mp4", // foot knuckles CU
-  "https://assets.mixkit.co/videos/27912/27912-720.mp4", // calf oil CU
-  "https://videos.pexels.com/video-files/11492240/11492240-hd_1280_720_50fps.mp4", // forearm / wrist CU
-  "https://assets.mixkit.co/videos/49452/49452-720.mp4", // foot sole pressure CU
-] as const;
-
+/** Single edited reel: close-ups only (hands/back/feet), no faces, no latex. */
+const DEFAULT_HERO_REEL = "/hero-reel.mp4";
 const DEFAULT_POSTER =
   "https://hlotbgirhjbnppdtllkv.supabase.co/storage/v1/object/public/public_assets/hero/hero-image.jpg";
 
@@ -59,13 +49,6 @@ export function HomeHeroSection({
   const { lang } = useLanguage();
   const c = COPY[lang];
   const [reduceMotion, setReduceMotion] = useState(false);
-  const [clipIndex, setClipIndex] = useState(0);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  const clips =
-    heroVideoUrl && heroVideoUrl.trim()
-      ? [heroVideoUrl.trim()]
-      : [...HERO_CLIPS];
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -75,20 +58,9 @@ export function HomeHeroSection({
     return () => mq.removeEventListener("change", apply);
   }, []);
 
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el) return;
-    el.load();
-    const play = el.play();
-    if (play && typeof play.catch === "function") play.catch(() => {});
-  }, [clipIndex, reduceMotion]);
-
+  const videoSrc = (heroVideoUrl && heroVideoUrl.trim()) || DEFAULT_HERO_REEL;
   const posterSrc = (heroImageUrl && heroImageUrl.trim()) || DEFAULT_POSTER;
-  const showVideo = clips.length > 0 && !reduceMotion;
-
-  function advanceClip() {
-    setClipIndex((i) => (i + 1) % clips.length);
-  }
+  const showVideo = Boolean(videoSrc) && !reduceMotion;
 
   return (
     <section className="pb-10 pt-4 md:pb-24 md:pt-[72px]">
@@ -132,19 +104,16 @@ export function HomeHeroSection({
         <div className="relative order-1 aspect-[4/5] max-h-[62vh] overflow-hidden rounded-b-3xl shadow-[var(--shadow-md)] md:order-2 md:max-h-none md:aspect-[4/5] md:rounded-3xl">
           {showVideo ? (
             <video
-              key={clips[clipIndex]}
-              ref={videoRef}
-              className="absolute inset-0 h-full w-full scale-[1.15] object-cover"
+              className="absolute inset-0 h-full w-full scale-[1.08] object-cover"
               autoPlay
               muted
+              loop
               playsInline
-              preload="metadata"
+              preload="auto"
               poster={posterSrc}
               aria-hidden
-              onEnded={advanceClip}
-              onError={advanceClip}
             >
-              <source src={clips[clipIndex]} type="video/mp4" />
+              <source src={videoSrc} type="video/mp4" />
             </video>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
@@ -155,7 +124,6 @@ export function HomeHeroSection({
             />
           )}
 
-          {/* Natural green wash (not latex clinical) */}
           <div
             className="pointer-events-none absolute inset-0"
             style={{
