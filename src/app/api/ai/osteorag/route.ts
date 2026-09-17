@@ -18,11 +18,11 @@ async function getOsteoBearer(base: string): Promise<
   | { ok: true; token: string }
   | { ok: false; error: string; status: number; present?: Record<string, boolean> }
 > {
-  const email = (process.env.OSTEORAG_EMAIL || "").trim();
-  const password = (process.env.OSTEORAG_PASSWORD || "").trim();
-  const bearerDirect = (process.env.OSTEORAG_BEARER_TOKEN || "").trim();
-  const basicUser = (process.env.OSTEORAG_BASIC_USER || "").trim();
-  const basicPass = (process.env.OSTEORAG_BASIC_PASS || "").trim();
+  const email = (process.env['OSTEORAG_EMAIL'] || "").trim();
+  const password = (process.env['OSTEORAG_PASSWORD'] || "").trim();
+  const bearerDirect = (process.env['OSTEORAG_BEARER_TOKEN'] || "").trim();
+  const basicUser = (process.env['OSTEORAG_BASIC_USER'] || "").trim();
+  const basicPass = (process.env['OSTEORAG_BASIC_PASS'] || "").trim();
 
   if (bearerDirect) return { ok: true, token: bearerDirect };
 
@@ -107,12 +107,12 @@ async function getOsteoBearer(base: string): Promise<
   }
 
   const present = {
-    OSTEORAG_EMAIL: Boolean((process.env.OSTEORAG_EMAIL || "").trim()),
-    OSTEORAG_PASSWORD: Boolean((process.env.OSTEORAG_PASSWORD || "").trim()),
-    OSTEORAG_BEARER_TOKEN: Boolean((process.env.OSTEORAG_BEARER_TOKEN || "").trim()),
-    OSTEORAG_BASIC_USER: Boolean((process.env.OSTEORAG_BASIC_USER || "").trim()),
-    OSTEORAG_BASIC_PASS: Boolean((process.env.OSTEORAG_BASIC_PASS || "").trim()),
-    OSTEORAG_BASE_URL: Boolean((process.env.OSTEORAG_BASE_URL || "").trim()),
+    OSTEORAG_EMAIL: Boolean((process.env['OSTEORAG_EMAIL'] || "").trim()),
+    OSTEORAG_PASSWORD: Boolean((process.env['OSTEORAG_PASSWORD'] || "").trim()),
+    OSTEORAG_BEARER_TOKEN: Boolean((process.env['OSTEORAG_BEARER_TOKEN'] || "").trim()),
+    OSTEORAG_BASIC_USER: Boolean((process.env['OSTEORAG_BASIC_USER'] || "").trim()),
+    OSTEORAG_BASIC_PASS: Boolean((process.env['OSTEORAG_BASIC_PASS'] || "").trim()),
+    OSTEORAG_BASE_URL: Boolean((process.env['OSTEORAG_BASE_URL'] || "").trim()),
   };
   return {
     ok: false,
@@ -144,7 +144,7 @@ export async function POST(request: Request) {
     }
 
     const base = (
-      process.env.OSTEORAG_BASE_URL || "https://osteorag.alonsosky617.workers.dev"
+      process.env['OSTEORAG_BASE_URL'] || "https://osteorag.alonsosky617.workers.dev"
     ).replace(/\/$/, "");
 
     const auth = await getOsteoBearer(base);
