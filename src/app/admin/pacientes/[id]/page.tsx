@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { OsteoRagConsult } from "@/components/admin/OsteoRagConsult";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Patient {
@@ -307,6 +308,17 @@ export default function PacienteDetailPage() {
 
   const p = patient;
 
+  const osteoContextParts: string[] = [];
+  if (history?.observations) osteoContextParts.push(`Observaciones: ${history.observations}`);
+  if (pathHx?.patologias?.length) osteoContextParts.push(`Patologías: ${pathHx.patologias.join(", ")}`);
+  if (pathHx?.allergies) osteoContextParts.push(`Alergias: ${pathHx.allergies}`);
+  if (pathHx?.current_medications) osteoContextParts.push(`Medicación: ${pathHx.current_medications}`);
+  if (eval_?.pmo_findings) {
+    const keys = Object.keys(eval_.pmo_findings);
+    if (keys.length) osteoContextParts.push(`Hallazgos PMO: ${keys.slice(0, 8).join(", ")}`);
+  }
+  const osteoContext = osteoContextParts.join(" · ");
+
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8">
       {/* ── Back + Header ─────────────────────────────────────────────── */}
@@ -479,6 +491,10 @@ export default function PacienteDetailPage() {
           )}
         </div>
       )}
+
+
+      {/* ── OsteoRAG corpus consult ───────────────────────────────────── */}
+      <OsteoRagConsult patientName={p.full_name} patientContext={osteoContext} />
 
       {/* ── Historial Clínico ─────────────────────────────────────────── */}
       {history && (
