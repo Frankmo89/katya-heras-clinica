@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import Groq from "groq-sdk";
+import { logLearningEvent } from "@/lib/ai-learning";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -192,11 +193,31 @@ Citas disponibles (títulos): ${JSON.stringify(
       );
     }
 
+    const citationTitles = (corpus.citations as { title?: string }[])
+      .map((c) => c?.title || "")
+      .filter(Boolean);
+    const eventId = await logLearningEvent({
+      source: "publicidad",
+      event_type: "generate",
+      topic_or_question: topic,
+      folder_filter: folderFilter,
+      output_preview:
+        typeof pack.articulo_corto === "string"
+          ? pack.articulo_corto
+          : JSON.stringify(pack).slice(0, 800),
+      citation_titles: citationTitles,
+      meta: {
+        has_estrategia: Boolean(pack.estrategia),
+        has_ig: Boolean(pack.instagram_post),
+      },
+    });
+
     return NextResponse.json({
       topic,
       folderFilter,
       corpusPreview: corpus.answer.slice(0, 500),
       citations: corpus.citations,
+      eventId,
       ...pack,
     });
   } catch (err) {
