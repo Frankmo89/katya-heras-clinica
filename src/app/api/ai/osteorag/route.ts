@@ -11,10 +11,113 @@ interface Citation {
   excerpt: string;
 }
 
+/** Simple in-memory token cache (warm serverless instances). */
+let cached: { token: string; expMs: number; email: string } | null = null;
+
+async function getOsteoBearer(base: string): Promise<
+  | { ok: true; token: string }
+  | { ok: false; error: string; status: number }
+> {
+  const email = (process.env.OSTEORAG_EMAIL || "").trim();
+  const password = (process.env.OSTEORAG_PASSWORD || "").trim();
+  const bearerDirect = (process.env.OSTEORAG_BEARER_TOKEN || "").trim();
+  const basicUser = (process.env.OSTEORAG_BASIC_USER || "").trim();
+  const basicPass = (process.env.OSTEORAG_BASIC_PASS || "").trim();
+
+  if (bearerDirect) return { ok: true, token: bearerDirect };
+
+  // Prefer Supabase email/password login (current OsteoRAG auth)
+  if (email && password) {
+    if (
+      cached &&
+      cached.email === email &&
+      cached.expMs > Date.now() + 60_000
+    ) {
+      return { ok: true, token: cached.token };
+    }
+
+    const cfgRes = await fetch(`${base}/api/config`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!cfgRes.ok) {
+      return {
+        ok: false,
+        error: `No pude leer /api/config de OsteoRAG (${cfgRes.status}).`,
+        status: 502,
+      };
+    }
+    const cfg = (await cfgRes.json()) as {
+      supabaseUrl?: string;
+      supabaseAnonKey?: string;
+    };
+    const supabaseUrl = (cfg.supabaseUrl || "").replace(/\/$/, "");
+    const anon = cfg.supabaseAnonKey || "";
+    if (!supabaseUrl || !anon) {
+      return {
+        ok: false,
+        error: "OsteoRAG /api/config no devolvió supabaseUrl/anon key.",
+        status: 502,
+      };
+    }
+
+    const authRes = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: anon,
+        Authorization: `Bearer ${anon}`,
+      },
+      body: JSON.stringify({ email, password }),
+    });
+    const authJson = (await authRes.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      error_description?: string;
+      msg?: string;
+      error?: string;
+    };
+    if (!authRes.ok || !authJson.access_token) {
+      return {
+        ok: false,
+        error:
+          authJson.error_description ||
+          authJson.msg ||
+          authJson.error ||
+          "Login OsteoRAG falló (email/password).",
+        status: 401,
+      };
+    }
+
+    const expiresIn = Number(authJson.expires_in || 3600);
+    cached = {
+      token: authJson.access_token,
+      email,
+      expMs: Date.now() + expiresIn * 1000,
+    };
+    return { ok: true, token: authJson.access_token };
+  }
+
+  // Legacy Basic — only if still set on Worker
+  if (basicUser && basicPass) {
+    return {
+      ok: true,
+      token: `basic:${Buffer.from(`${basicUser}:${basicPass}`).toString("base64")}`,
+    };
+  }
+
+  return {
+    ok: false,
+    error:
+      "OsteoRAG no está configurado. En Vercel pon OSTEORAG_EMAIL + OSTEORAG_PASSWORD (login de OsteoRAG).",
+    status: 503,
+  };
+}
+
 /**
  * Proxies Katya admin → OsteoRAG Worker chat.
- * Auth: server-side Basic (OSTEORAG_BASIC_USER/PASS) or Bearer (OSTEORAG_BEARER_TOKEN).
- * Never expose those secrets to the browser.
+ * Auth preferida: OSTEORAG_EMAIL + OSTEORAG_PASSWORD → Bearer JWT.
+ * Alternativas: OSTEORAG_BEARER_TOKEN o Basic legacy.
  */
 export async function POST(request: Request) {
   try {
@@ -31,33 +134,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Pregunta demasiado larga." }, { status: 400 });
     }
 
-    const base = (process.env.OSTEORAG_BASE_URL || "https://osteorag.alonsosky617.workers.dev").replace(
-      /\/$/,
-      "",
-    );
+    const base = (
+      process.env.OSTEORAG_BASE_URL || "https://osteorag.alonsosky617.workers.dev"
+    ).replace(/\/$/, "");
+
+    const auth = await getOsteoBearer(base);
+    if (!auth.ok) {
+      return NextResponse.json(
+        { error: auth.error, code: "OSTEORAG_AUTH" },
+        { status: auth.status },
+      );
+    }
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-
-    const bearer = (process.env.OSTEORAG_BEARER_TOKEN || "").trim();
-    const basicUser = (process.env.OSTEORAG_BASIC_USER || "").trim();
-    const basicPass = (process.env.OSTEORAG_BASIC_PASS || "").trim();
-
-    if (bearer) {
-      headers.Authorization = `Bearer ${bearer}`;
-    } else if (basicUser && basicPass) {
-      headers.Authorization =
-        "Basic " + Buffer.from(`${basicUser}:${basicPass}`).toString("base64");
+    if (auth.token.startsWith("basic:")) {
+      headers.Authorization = `Basic ${auth.token.slice("basic:".length)}`;
     } else {
-      return NextResponse.json(
-        {
-          error:
-            "OsteoRAG no está configurado en el servidor. Falta OSTEORAG_BEARER_TOKEN o OSTEORAG_BASIC_USER/PASS en Vercel.",
-          code: "OSTEORAG_NOT_CONFIGURED",
-        },
-        { status: 503 },
-      );
+      headers.Authorization = `Bearer ${auth.token}`;
     }
 
     const message = [
@@ -92,6 +187,8 @@ export async function POST(request: Request) {
     }
 
     if (!upstream.ok) {
+      // Invalidate cached token on 401
+      if (upstream.status === 401) cached = null;
       return NextResponse.json(
         { error: json.error || `OsteoRAG error ${upstream.status}` },
         { status: upstream.status === 401 ? 401 : 502 },
