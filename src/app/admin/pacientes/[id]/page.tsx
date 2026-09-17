@@ -494,7 +494,7 @@ export default function PacienteDetailPage() {
 
 
       {/* ── OsteoRAG corpus consult ───────────────────────────────────── */}
-      <OsteoRagConsult patientName={p.full_name} patientContext={osteoContext} />
+      <OsteoRagConsult patientName={p.full_name} patientContext={osteoContext} patientId={p.id} />
 
       {/* ── Historial Clínico ─────────────────────────────────────────── */}
       {history && (
