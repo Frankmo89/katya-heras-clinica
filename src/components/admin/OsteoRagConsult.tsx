@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BookOpen, Loader2, Send } from "lucide-react";
+import { BookOpen, Loader2, Send, ThumbsUp, ThumbsDown } from "lucide-react";
 
 type FolderFilter = "all" | "escuela" | "libros" | "tesis";
 
@@ -15,6 +15,7 @@ interface Citation {
 interface Props {
   patientName: string;
   patientContext?: string;
+  patientId?: string;
 }
 
 const FILTERS: { id: FolderFilter; label: string }[] = [
@@ -31,13 +32,15 @@ const SUGGESTIONS = [
   "Secuencia o bases craneosacrales (TCS)",
 ];
 
-export function OsteoRagConsult({ patientName, patientContext = "" }: Props) {
+export function OsteoRagConsult({ patientName, patientContext = "", patientId }: Props) {
   const [question, setQuestion] = useState("");
   const [folderFilter, setFolderFilter] = useState<FolderFilter>("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [answer, setAnswer] = useState<string | null>(null);
   const [citations, setCitations] = useState<Citation[]>([]);
+  const [eventId, setEventId] = useState<string | null>(null);
+  const [rated, setRated] = useState<-1 | 1 | null>(null);
 
   const contextPreview = useMemo(
     () => (patientContext ? patientContext.slice(0, 280) : ""),
@@ -52,6 +55,8 @@ export function OsteoRagConsult({ patientName, patientContext = "" }: Props) {
     setError(null);
     setAnswer(null);
     setCitations([]);
+    setEventId(null);
+    setRated(null);
     try {
       const res = await fetch("/api/ai/osteorag", {
         method: "POST",
@@ -60,6 +65,7 @@ export function OsteoRagConsult({ patientName, patientContext = "" }: Props) {
           question: finalQ,
           patientName,
           patientContext,
+          patientId: patientId || null,
           folderFilter,
         }),
       });
@@ -68,10 +74,12 @@ export function OsteoRagConsult({ patientName, patientContext = "" }: Props) {
         citations?: Citation[];
         error?: string;
         code?: string;
+        eventId?: string;
       };
       if (!res.ok) throw new Error(json.error || `Error ${res.status}`);
       setAnswer(json.answer || "");
       setCitations(json.citations || []);
+      setEventId(json.eventId || null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
@@ -197,6 +205,55 @@ export function OsteoRagConsult({ patientName, patientContext = "" }: Props) {
               </ul>
             </div>
           )}
+
+          <div className="flex items-center gap-2 pt-1">
+            <span className="text-[11px] text-emerald-800/70">¿Útil para Katya?</span>
+            <button
+              type="button"
+              disabled={rated !== null}
+              onClick={async () => {
+                setRated(1);
+                await fetch("/api/ai/feedback", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    rating: 1,
+                    source: "osteorag",
+                    relatedEventId: eventId,
+                    topicOrQuestion: question,
+                    patientId: patientId || null,
+                    outputPreview: answer,
+                  }),
+                });
+              }}
+              className={`rounded-lg border px-2 py-1 text-[11px] ${rated === 1 ? "border-emerald-400 bg-emerald-100 text-emerald-800" : "border-emerald-200 text-emerald-700 hover:bg-emerald-100"} disabled:opacity-60`}
+            >
+              <ThumbsUp size={12} className="inline" /> Sí
+            </button>
+            <button
+              type="button"
+              disabled={rated !== null}
+              onClick={async () => {
+                setRated(-1);
+                await fetch("/api/ai/feedback", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    rating: -1,
+                    source: "osteorag",
+                    relatedEventId: eventId,
+                    topicOrQuestion: question,
+                    patientId: patientId || null,
+                    outputPreview: answer,
+                  }),
+                });
+              }}
+              className={`rounded-lg border px-2 py-1 text-[11px] ${rated === -1 ? "border-red-300 bg-red-50 text-red-700" : "border-emerald-200 text-emerald-700 hover:bg-red-50"} disabled:opacity-60`}
+            >
+              <ThumbsDown size={12} className="inline" /> No
+            </button>
+          </div>
+
           <p className="text-[11px] italic text-emerald-700/70">
             Asistente de estudio con citas. No es diagnóstico ni sustituye tu criterio clínico.
           </p>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logLearningEvent } from "@/lib/ai-learning";
 
 export const runtime = "nodejs";
 
@@ -222,9 +223,24 @@ export async function POST(request: Request) {
       );
     }
 
+    const citationTitles = (json.citations || [])
+      .map((c) => (c && typeof c === "object" && "title" in c ? String((c as { title?: string }).title || "") : ""))
+      .filter(Boolean);
+    const eventId = await logLearningEvent({
+      source: "osteorag",
+      event_type: "query",
+      topic_or_question: question,
+      folder_filter: folderFilter,
+      patient_id: body.patientId ? String(body.patientId) : null,
+      output_preview: json.answer || "",
+      citation_titles: citationTitles,
+      meta: { patientName: patientName || null },
+    });
+
     return NextResponse.json({
       answer: json.answer || "",
       citations: json.citations || [],
+      eventId,
       disclaimer:
         "Asistente de estudio con citas del corpus. No es diagnóstico ni sustituye el criterio clínico.",
     });

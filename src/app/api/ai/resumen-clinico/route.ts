@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { createClient } from '@supabase/supabase-js';
+import { logLearningEvent } from '@/lib/ai-learning';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -64,7 +65,19 @@ export async function POST(request: Request) {
     const aiResponse = chatCompletion.choices[0]?.message?.content || "{}";
     const result = JSON.parse(aiResponse);
 
-    return NextResponse.json(result);
+    const eventId = await logLearningEvent({
+      source: 'resumen_clinico',
+      event_type: 'conclusion',
+      topic_or_question: `Resumen clínico: ${patientName || patientEmail}`,
+      output_preview: typeof result.resumen === 'string' ? result.resumen : JSON.stringify(result).slice(0, 800),
+      meta: {
+        patientEmailHash: patientEmail ? patientEmail.length : 0,
+        observaciones: Array.isArray(result.observaciones) ? result.observaciones.length : 0,
+        recomendaciones: Array.isArray(result.recomendaciones) ? result.recomendaciones.length : 0,
+      },
+    });
+
+    return NextResponse.json({ ...result, eventId });
 
   } catch (error) {
     console.error("Error en la API de Groq:", error);
