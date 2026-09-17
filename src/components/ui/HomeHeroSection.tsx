@@ -29,13 +29,15 @@ const COPY = {
 } as const;
 
 /** Bare-hands massage clips (no latex). Thai stretch first, then variety. Free Pexels/Mixkit. */
+/** Extreme close-ups only — bare hands, no faces, no latex gloves. */
 const HERO_CLIPS = [
-  "https://videos.pexels.com/video-files/5793299/5793299-hd_1280_720_25fps.mp4", // Thai-style leg stretch
-  "https://videos.pexels.com/video-files/6111071/6111071-hd_1280_720_25fps.mp4", // floor bodywork
-  "https://assets.mixkit.co/videos/14781/14781-720.mp4", // back oil close-up
-  "https://assets.mixkit.co/videos/24136/24136-720.mp4", // teal/green spa back
-  "https://videos.pexels.com/video-files/11492183/11492183-hd_1280_720_50fps.mp4", // foot
-  "https://assets.mixkit.co/videos/27912/27912-720.mp4", // calf oil
+  "https://assets.mixkit.co/videos/14781/14781-720.mp4", // back + oil (hands only)
+  "https://assets.mixkit.co/videos/24136/24136-720.mp4", // back teal spa (hands only)
+  "https://videos.pexels.com/video-files/11492176/11492176-hd_1280_720_50fps.mp4", // back hands extreme CU
+  "https://videos.pexels.com/video-files/11492183/11492183-hd_1280_720_50fps.mp4", // foot knuckles CU
+  "https://assets.mixkit.co/videos/27912/27912-720.mp4", // calf oil CU
+  "https://videos.pexels.com/video-files/11492240/11492240-hd_1280_720_50fps.mp4", // forearm / wrist CU
+  "https://assets.mixkit.co/videos/49452/49452-720.mp4", // foot sole pressure CU
 ] as const;
 
 const DEFAULT_POSTER =
@@ -132,7 +134,7 @@ export function HomeHeroSection({
             <video
               key={clips[clipIndex]}
               ref={videoRef}
-              className="absolute inset-0 h-full w-full object-cover"
+              className="absolute inset-0 h-full w-full scale-[1.15] object-cover"
               autoPlay
               muted
               playsInline
