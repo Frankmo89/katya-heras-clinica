@@ -5,13 +5,44 @@ import { createClient } from '@supabase/supabase-js';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// Inicializar cliente de Supabase (con Service Role para leer todos los datos)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseUrl      = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+// Service-role client — reads clinical notes across all patients, bypassing
+// RLS. Only reachable after the auth check below passes.
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+/**
+ * Requires a valid Supabase session, forwarded as `Authorization: Bearer
+ * <access_token>` by the caller (see admin/pacientes/[id]/page.tsx). Same
+ * pattern as /api/revalidate-public: this app's browser client persists
+ * its session in localStorage, not cookies, so a Route Handler has no
+ * other way to see who's calling it — the token is verified directly
+ * against Supabase Auth. There's no separate admin role in this project;
+ * any signed-in Supabase Auth user is clinic staff, matching every RLS
+ * policy in this app.
+ *
+ * This check is critical here specifically: without it, this route reads
+ * and returns a patient's clinical notes (via Groq) to anyone who supplies
+ * that patient's email, with no session required at all.
+ */
+async function requireStaffSession(request: Request): Promise<boolean> {
+  const authHeader = request.headers.get("authorization") ?? "";
+  const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token) return false;
+
+  const authClient = createClient(supabaseUrl, supabaseAnonKey);
+  const { data: { user }, error } = await authClient.auth.getUser(token);
+  return !error && !!user;
+}
 
 export async function POST(request: Request) {
   try {
+    if (!(await requireStaffSession(request))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { patientEmail, patientName } = await request.json();
 
     if (!patientEmail) {
