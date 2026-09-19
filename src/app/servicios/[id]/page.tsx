@@ -3,6 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 import { ServiceDetailContent } from "./ServiceDetailContent";
 import { mapDbService, type DbService, type Service, type ServiceDetailData, type TimelineRow, type FaqItem } from "@/data/services";
 
+// Safety net on top of the on-demand revalidation triggered by
+// /admin/servicios (see /api/revalidate-public): catches any change made
+// outside that flow (e.g. a direct DB edit) within 5 minutes.
+export const revalidate = 300;
+
 // ── Extended DB row type (includes JSONB content columns) ─────────────────
 interface DbTimeline { time: string; title: string; desc: string; }
 interface DbFaq      { question: string; answer: string; }
@@ -49,6 +54,7 @@ function buildDetail(row: DbServiceFull): ServiceDetailData {
     notFor:   { es: row.not_for   ?? [], en: row.not_for   ?? [] },
     faq:      faqs,
     related:  [],
+    galleryImages: row.gallery_images ?? [],
   };
 }
 
@@ -82,7 +88,8 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
   const [{ data: row }, { data: allServices }] = await Promise.all([
     sb.from("services").select("*").eq("id", id).single(),
     sb.from("services")
-      .select("id, title_es, title_en, subtitle_es, subtitle_en, description_es, description_en, duration_minutes, price, tone")
+      .select("id, title_es, title_en, subtitle_es, subtitle_en, description_es, description_en, duration_minutes, price, tone, hero_image")
+      .eq("is_active", true)
       .order("created_at"),
   ]);
 

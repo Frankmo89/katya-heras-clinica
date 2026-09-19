@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { uploadImage } from "@/lib/uploadImage";
+import { toFriendlyMessage } from "@/lib/errorMessages";
+import { revalidatePublic } from "@/lib/revalidatePublic";
 import Link from "next/link";
 import {
   ArrowLeft, Save, Plus, Trash2, Check, X,
@@ -39,14 +42,7 @@ const TONE_OPTIONS = [
 
 // ── Storage upload ─────────────────────────────────────────────────────────
 async function uploadToStorage(file: File): Promise<string> {
-  const ext  = file.name.split(".").pop() ?? "jpg";
-  const path = `services/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const { error } = await supabase.storage
-    .from("service-images")
-    .upload(path, file, { cacheControl: "3600" });
-  if (error) throw new Error(error.message);
-  const { data } = supabase.storage.from("service-images").getPublicUrl(path);
-  return data.publicUrl;
+  return uploadImage(file, "service-images", "services");
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────
@@ -69,6 +65,7 @@ export default function EditarServicioPage() {
   const [duration,   setDuration]   = useState("");
   const [price,      setPrice]      = useState("");
   const [tone, setTone] = useState<"pink" | "green" | "blue" | "">("");
+  const [isActive,   setIsActive]   = useState(true);
 
   // Tab 2 — Multimedia (existing URLs + new files)
   const [existingHeroUrl,     setExistingHeroUrl]     = useState<string | null>(null);
@@ -105,6 +102,7 @@ export default function EditarServicioPage() {
     setDuration(data.duration_minutes != null ? String(data.duration_minutes) : "");
     setPrice(data.price != null ? String(data.price) : "");
     setTone((data.tone as typeof tone) ?? "");
+    setIsActive(data.is_active ?? true);
 
     setExistingHeroUrl(data.hero_image ?? null);
     setExistingGalleryUrls(data.gallery_images ?? []);
@@ -176,6 +174,7 @@ export default function EditarServicioPage() {
         duration_minutes: duration          ? parseInt(duration, 10)  : null,
         price:            price             ? parseFloat(price)        : null,
         tone:             tone              || null,
+        is_active:        isActive,
         hero_image:       heroUrl,
         gallery_images:   allGalleryUrls.length   > 0 ? allGalleryUrls  : null,
         timeline:         cleanTimeline.length > 0 ? cleanTimeline : null,
@@ -186,11 +185,11 @@ export default function EditarServicioPage() {
 
       if (dbError) throw new Error(dbError.message);
 
-      fetch("/api/revalidate-public", { method: "POST" }).catch(() => {});
+      revalidatePublic();
       setSaved(true);
       setTimeout(() => router.push("/admin/servicios"), 2200);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar el servicio.");
+      setError(toFriendlyMessage(err));
       setSaving(false);
     }
   }
@@ -211,20 +210,36 @@ export default function EditarServicioPage() {
     <div className="p-8 max-w-4xl mx-auto">
 
       {/* Page header */}
-      <div className="mb-8 flex items-center gap-4">
-        <Link
-          href="/admin/servicios"
-          className="flex items-center gap-1.5 text-sm text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
-        >
-          <ArrowLeft size={14} /> Volver
-        </Link>
-        <div className="h-4 w-px bg-slate-200" />
-        <div>
-          <span className="text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)] font-medium">
-            Catálogo Clínico
-          </span>
-          <h1 className="mt-0.5 font-serif text-3xl text-slate-800">Editar Servicio</h1>
+      <div className="mb-8 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/admin/servicios"
+            className="flex items-center gap-1.5 text-sm text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+          >
+            <ArrowLeft size={14} /> Volver
+          </Link>
+          <div className="h-4 w-px bg-slate-200" />
+          <div>
+            <span className="text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)] font-medium">
+              Catálogo Clínico
+            </span>
+            <h1 className="mt-0.5 font-serif text-3xl text-slate-800">Editar Servicio</h1>
+          </div>
         </div>
+
+        {/* Visible / hidden toggle — controls whether the service shows in
+            /servicios and /reservar without deleting it. */}
+        <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-medium">
+          <input
+            type="checkbox"
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+            className="h-4 w-4 accent-[var(--color-bronze)]"
+          />
+          <span className={isActive ? "text-emerald-600" : "text-slate-400"}>
+            {isActive ? "Visible en el sitio" : "Oculto del sitio"}
+          </span>
+        </label>
       </div>
 
       {/* Tab bar */}

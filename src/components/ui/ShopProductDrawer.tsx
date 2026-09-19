@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { X, Minus, Plus, ArrowRight } from "lucide-react";
 import type { ShopProduct, ProductTone } from "@/data/shop";
-import { SHOP_CATEGORIES } from "@/data/shop";
+import { categoryLabel } from "@/data/shop";
 import { Button } from "@/components/ui/Button";
 import { useLanguage } from "@/context/LanguageContext";
+import { useClinicSettings } from "@/context/ClinicSettingsContext";
+import { formatPrice } from "@/lib/format";
 
 const toneVar: Record<ProductTone, string> = {
   pink:   "var(--color-surface-pink)",
@@ -36,12 +38,13 @@ interface ShopProductDrawerProps {
 export function ShopProductDrawer({ p, onClose, onAdd }: ShopProductDrawerProps) {
   const [qty, setQty] = useState(1);
   const { lang } = useLanguage();
+  const { settings } = useClinicSettings();
   const dc = COPY[lang];
 
   if (!p) return null;
 
   const swatch   = toneVar[p.tone] ?? "var(--color-surface-blue)";
-  const catLabel = SHOP_CATEGORIES.find((c) => c.id === p.cat)?.[lang] ?? "";
+  const catLabel = categoryLabel(p.cat, lang);
 
   return (
     <>
@@ -62,13 +65,22 @@ export function ShopProductDrawer({ p, onClose, onAdd }: ShopProductDrawerProps)
           <X size={14} strokeWidth={1.5} />
         </button>
 
-        {/* Hero image */}
-        <div
-          className="flex aspect-[4/3] shrink-0 items-center justify-center font-serif text-[140px] text-black/[0.06]"
-          style={{ background: `linear-gradient(135deg, ${swatch} 0%, #FAFAF8 100%)` }}
-        >
-          {p.name[lang].charAt(0)}
-        </div>
+        {/* Hero image — falls back to a tinted monogram when there's no photo */}
+        {p.images[0] ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={p.images[0]}
+            alt={p.name[lang]}
+            className="aspect-[4/3] w-full shrink-0 object-cover"
+          />
+        ) : (
+          <div
+            className="flex aspect-[4/3] shrink-0 items-center justify-center font-serif text-[140px] text-black/[0.06]"
+            style={{ background: `linear-gradient(135deg, ${swatch} 0%, #FAFAF8 100%)` }}
+          >
+            {p.name[lang].charAt(0)}
+          </div>
+        )}
 
         {/* Content */}
         <div className="flex flex-col gap-6 px-11 py-10">
@@ -89,12 +101,13 @@ export function ShopProductDrawer({ p, onClose, onAdd }: ShopProductDrawerProps)
           {/* Price + size */}
           <div className="flex items-baseline justify-between border-t border-[rgba(30,41,59,0.08)] pt-2">
             <span className="font-serif text-3xl text-[var(--color-text)]">
-              ${p.price.toLocaleString("es-MX")}{" "}
-              <span className="font-sans text-[13px] tracking-[0.06em] text-[var(--color-text-muted)]">MXN</span>
+              {formatPrice(p.price, settings.currency)}
             </span>
-            <span className="text-[12px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
-              {p.size}
-            </span>
+            {p.size && (
+              <span className="text-[12px] uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+                {p.size}
+              </span>
+            )}
           </div>
 
           {/* Ritual de uso */}

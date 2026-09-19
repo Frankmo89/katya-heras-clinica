@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { uploadImage } from "@/lib/uploadImage";
 import { toFriendlyMessage } from "@/lib/errorMessages";
@@ -53,14 +53,17 @@ async function uploadToStorage(file: File): Promise<string> {
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────
-export default function NuevoProductoPage() {
+export default function EditarProductoPage() {
   const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const id = params.id;
 
   // UI state
-  const [tab,    setTab]    = useState<TabId>("informacion");
-  const [saving, setSaving] = useState(false);
-  const [saved,  setSaved]  = useState(false);
-  const [error,  setError]  = useState<string | null>(null);
+  const [tab,     setTab]     = useState<TabId>("informacion");
+  const [saving,  setSaving]  = useState(false);
+  const [saved,   setSaved]   = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // Tab 1 — Información
   const [titleEs,   setTitleEs]   = useState("");
@@ -70,9 +73,11 @@ export default function NuevoProductoPage() {
   const [category,  setCategory]  = useState("");
   const [price,     setPrice]     = useState("");
   const [stock,     setStock]     = useState("");
+  const [isActive,  setIsActive]  = useState(true);
 
-  // Tab 2 — Multimedia
-  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  // Tab 2 — Multimedia (existing URLs + new files)
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]);
+  const [imageFiles,        setImageFiles]         = useState<File[]>([]);
 
   // Tab 3 — Diseño
   const [cardStyle, setCardStyle] = useState<"editorial" | "minimal" | "polaroid" | "">("");
@@ -81,9 +86,49 @@ export default function NuevoProductoPage() {
   // Tab 4 — Detalles
   const [details, setDetails] = useState<DetailItem[]>([{ label: "", value: "" }]);
 
-  // ── Detail helpers ──────────────────────────────────────────────────────
+  // ── Load product ─────────────────────────────────────────────────────────
+  const loadProduct = useCallback(async () => {
+    setLoading(true);
+    const { data, error: fetchError } = await supabase
+      .from("products")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !data) {
+      setError("No se pudo cargar el producto.");
+      setLoading(false);
+      return;
+    }
+
+    setTitleEs(data.title_es ?? "");
+    setTitleEn(data.title_en ?? "");
+    setDescEs(data.description_es ?? "");
+    setDescEn(data.description_en ?? "");
+    setCategory(data.category ?? "");
+    setPrice(data.price != null ? String(data.price) : "");
+    setStock(data.stock != null ? String(data.stock) : "");
+    setIsActive(data.is_active ?? true);
+    setCardStyle((data.card_style as typeof cardStyle) ?? "");
+    setTone((data.tone as typeof tone) ?? "");
+
+    setExistingImageUrls(data.images ?? []);
+
+    if (Array.isArray(data.details) && data.details.length > 0)
+      setDetails(data.details as DetailItem[]);
+
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { loadProduct(); }, [loadProduct]);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
   function updateDetail(i: number, field: keyof DetailItem, val: string) {
     setDetails((p) => p.map((d, idx) => idx === i ? { ...d, [field]: val } : d));
+  }
+
+  function removeExistingImage(url: string) {
+    setExistingImageUrls((prev) => prev.filter((u) => u !== url));
   }
 
   // ── Submit ───────────────────────────────────────────────────────────────
@@ -98,16 +143,17 @@ export default function NuevoProductoPage() {
     setError(null);
 
     try {
-      // Upload images sequentially to avoid rate limits
-      const imageUrls: string[] = [];
+      // Upload new files and append to retained existing URLs
+      const newImageUrls: string[] = [];
       for (const file of imageFiles) {
-        imageUrls.push(await uploadToStorage(file));
+        newImageUrls.push(await uploadToStorage(file));
       }
+      const allImageUrls = [...existingImageUrls, ...newImageUrls];
 
       // Clean details
       const cleanDetails = details.filter((d) => d.label.trim() || d.value.trim());
 
-      const { error: dbError } = await supabase.from("products").insert({
+      const { error: dbError } = await supabase.from("products").update({
         title_es:       titleEs.trim(),
         title_en:       titleEn.trim()   || null,
         description_es: descEs.trim()    || null,
@@ -117,9 +163,10 @@ export default function NuevoProductoPage() {
         stock:          stock            ? parseInt(stock, 10)  : null,
         card_style:     cardStyle        || null,
         tone:           tone             || null,
-        images:         imageUrls.length > 0 ? imageUrls    : null,
-        details:        cleanDetails.length  > 0 ? cleanDetails : null,
-      });
+        is_active:      isActive,
+        images:         allImageUrls.length > 0 ? allImageUrls    : null,
+        details:        cleanDetails.length     > 0 ? cleanDetails : null,
+      }).eq("id", id);
 
       if (dbError) throw new Error(dbError.message);
 
@@ -134,36 +181,60 @@ export default function NuevoProductoPage() {
 
   const activeTone = TONE_OPTIONS.find((t) => t.value === tone) ?? null;
 
+  // ── Loading ───────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-24 text-sm text-slate-400">
+        Cargando producto…
+      </div>
+    );
+  }
+
   // ── Render ────────────────────────────────────────────────────────────
   return (
     <div className="p-8 max-w-4xl mx-auto">
 
       {/* Page header */}
-      <div className="mb-8 flex items-center gap-4">
-        <Link
-          href="/admin/tienda"
-          className="flex items-center gap-1.5 text-sm text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
-        >
-          <ArrowLeft size={14} /> Volver
-        </Link>
-        <div className="h-4 w-px bg-slate-200" />
-        <div>
-          <span className="text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)] font-medium">
-            Catálogo de Productos
-          </span>
-          <h1 className="mt-0.5 font-serif text-3xl text-slate-800">Crear Producto</h1>
+      <div className="mb-8 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/admin/tienda"
+            className="flex items-center gap-1.5 text-sm text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+          >
+            <ArrowLeft size={14} /> Volver
+          </Link>
+          <div className="h-4 w-px bg-slate-200" />
+          <div>
+            <span className="text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)] font-medium">
+              Catálogo de Productos
+            </span>
+            <h1 className="mt-0.5 font-serif text-3xl text-slate-800">Editar Producto</h1>
+          </div>
         </div>
+
+        {/* Visible / hidden toggle — controls whether the product shows in /tienda without deleting it. */}
+        <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-medium">
+          <input
+            type="checkbox"
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+            className="h-4 w-4 accent-[var(--color-bronze)]"
+          />
+          <span className={isActive ? "text-emerald-600" : "text-slate-400"}>
+            {isActive ? "Visible en la tienda" : "Oculto de la tienda"}
+          </span>
+        </label>
       </div>
 
       {/* Tab bar */}
       <div className="mb-6 flex overflow-x-auto border-b border-slate-100">
-        {TABS.map(({ id, label, icon: Icon }) => {
-          const active = tab === id;
+        {TABS.map(({ id: tabId, label, icon: Icon }) => {
+          const active = tab === tabId;
           return (
             <button
-              key={id}
+              key={tabId}
               type="button"
-              onClick={() => setTab(id)}
+              onClick={() => setTab(tabId)}
               className={`relative flex shrink-0 items-center gap-2 px-5 py-3.5 text-[13px] font-medium transition-all ${
                 active
                   ? "text-[var(--color-bronze)]"
@@ -286,7 +357,34 @@ export default function NuevoProductoPage() {
             <p className="mb-6 text-sm text-[var(--color-text-muted)]">
               Puedes seleccionar varias imágenes a la vez. La primera imagen será la principal en las tarjetas. Recomendado: 800 × 800 px.
             </p>
-            <label className={labelCls}>Seleccionar archivos</label>
+
+            {existingImageUrls.length > 0 && (
+              <>
+                <label className={labelCls}>Imágenes actuales</label>
+                <div className="mb-5 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                  {existingImageUrls.map((url, i) => (
+                    <div key={url} className="group relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt="" className="h-24 w-full rounded-xl object-cover shadow-sm" />
+                      {i === 0 && (
+                        <span className="absolute bottom-1 left-1 rounded-full bg-[var(--color-bronze)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
+                          Principal
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeExistingImage(url)}
+                        className="absolute right-1 top-1 hidden h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white group-hover:flex"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <label className={labelCls}>Añadir imágenes nuevas</label>
             <input
               type="file"
               accept="image/*"
@@ -308,11 +406,6 @@ export default function NuevoProductoPage() {
                       alt={file.name}
                       className="h-24 w-full rounded-xl object-cover shadow-sm"
                     />
-                    {i === 0 && (
-                      <span className="absolute bottom-1 left-1 rounded-full bg-[var(--color-bronze)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
-                        Principal
-                      </span>
-                    )}
                     <button
                       type="button"
                       onClick={() => setImageFiles((prev) => prev.filter((_, idx) => idx !== i))}
@@ -325,7 +418,7 @@ export default function NuevoProductoPage() {
                 ))}
               </div>
             )}
-            {imageFiles.length === 0 && (
+            {existingImageUrls.length === 0 && imageFiles.length === 0 && (
               <div className="mt-6 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 py-12 text-center">
                 <ImageIcon size={28} strokeWidth={1} className="mb-3 text-slate-300" />
                 <p className="text-sm text-slate-400">No hay imágenes seleccionadas</p>

@@ -156,7 +156,7 @@ export function ServiceDetailContent({ svc, detail, relatedServices, serviceInde
             </div>
           </div>
 
-          {/* Right — editorial visual block */}
+          {/* Right — hero image, falls back to the editorial placeholder */}
           <div
             className="relative overflow-hidden rounded-2xl shadow-[var(--shadow-md)]"
             style={{
@@ -164,19 +164,40 @@ export function ServiceDetailContent({ svc, detail, relatedServices, serviceInde
               background: `linear-gradient(135deg, ${toneVar[svc.tone]} 0%, var(--color-background-soft) 100%)`,
             }}
           >
+            {svc.heroImage ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={svc.heroImage}
+                  alt={hero.kicker}
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+                <div
+                  className="absolute inset-x-0 top-0 h-24"
+                  style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.35), transparent)" }}
+                />
+              </>
+            ) : (
+              <>
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background:
+                      "radial-gradient(circle at 70% 40%, rgba(192,138,94,0.18), transparent 55%)",
+                  }}
+                />
+                <div className="absolute bottom-9 left-9 right-9 font-serif text-[120px] font-light leading-none tracking-[-0.04em] text-black/[0.08]">
+                  {hero.kicker.split(" ")[0]}.
+                </div>
+              </>
+            )}
             <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  "radial-gradient(circle at 70% 40%, rgba(192,138,94,0.18), transparent 55%)",
-              }}
-            />
-            <div className="absolute left-8 right-8 top-8 flex justify-between font-sans text-[11px] uppercase tracking-[0.16em] text-black/40">
+              className={`absolute left-8 right-8 top-8 flex justify-between font-sans text-[11px] uppercase tracking-[0.16em] ${
+                svc.heroImage ? "text-white/85" : "text-black/40"
+              }`}
+            >
               <span>№ {String(serviceIndex).padStart(2, "0")}</span>
               <span>{svc.duration} min</span>
-            </div>
-            <div className="absolute bottom-9 left-9 right-9 font-serif text-[120px] font-light leading-none tracking-[-0.04em] text-black/[0.08]">
-              {hero.kicker.split(" ")[0]}.
             </div>
             <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-[rgba(192,138,94,0.18)]" />
           </div>
@@ -287,11 +308,21 @@ export function ServiceDetailContent({ svc, detail, relatedServices, serviceInde
           </div>
 
           <div className="grid grid-cols-[2fr_1fr_1fr] grid-rows-[200px_200px] gap-3.5">
-            <div className="row-span-2 rounded-2xl bg-[#EFE8E1]" />
-            <div className="rounded-2xl bg-[#E8EBF0]" />
-            <div className="rounded-2xl bg-[#E4EDE4]" />
-            <div className="rounded-2xl bg-[#E8EBF0]" />
-            <div className="rounded-2xl bg-[#EFE8E1]" />
+            {["#EFE8E1", "#E8EBF0", "#E4EDE4", "#E8EBF0", "#EFE8E1"].map((fallbackColor, i) => {
+              const image = detail.galleryImages?.[i];
+              return (
+                <div
+                  key={i}
+                  className={`overflow-hidden rounded-2xl ${i === 0 ? "row-span-2" : ""}`}
+                  style={image ? undefined : { backgroundColor: fallbackColor }}
+                >
+                  {image && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={image} alt="" className="h-full w-full object-cover" />
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <p className="mt-4 text-center text-[13px] italic text-[var(--color-text-muted)]">

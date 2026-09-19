@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { revalidatePublic } from "@/lib/revalidatePublic";
 import Link from "next/link";
-import { Plus, ShoppingBag, Tag, Layers } from "lucide-react";
+import { Plus, ShoppingBag, Tag, Layers, Eye, EyeOff, Pencil } from "lucide-react";
 
 interface Product {
   id: string;
@@ -14,6 +15,7 @@ interface Product {
   stock: number | null;
   card_style: string | null;
   tone: string | null;
+  is_active: boolean;
 }
 
 const TONE_BG: Record<string, string> = {
@@ -33,17 +35,31 @@ const TONE_ACCENT: Record<string, string> = {
 export default function TiendaPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase
       .from("products")
-      .select("id, title_es, title_en, category, price, stock, card_style, tone")
+      .select("id, title_es, title_en, category, price, stock, card_style, tone, is_active")
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (!error) setProducts(data ?? []);
         setLoading(false);
       });
   }, []);
+
+  async function toggleActive(id: string, current: boolean) {
+    setTogglingId(id);
+    const { error } = await supabase
+      .from("products")
+      .update({ is_active: !current })
+      .eq("id", id);
+    if (!error) {
+      setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, is_active: !current } : p)));
+      revalidatePublic();
+    }
+    setTogglingId(null);
+  }
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -90,15 +106,40 @@ export default function TiendaPage() {
                 style={{ backgroundColor: bg }}
                 className="group flex flex-col gap-4 rounded-3xl border border-white/60 p-6 shadow-[0_2px_12px_rgba(0,0,0,0.05)] transition hover:shadow-[0_4px_20px_rgba(0,0,0,0.09)]"
               >
-                {/* Accent dot + EN title */}
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: accent }} />
-                  <span
-                    className="text-[11px] uppercase tracking-[0.16em] font-medium"
-                    style={{ color: accent }}
-                  >
-                    {p.title_en ?? "—"}
-                  </span>
+                {/* Accent dot + EN title + visibility toggle */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: accent }} />
+                    <span
+                      className="text-[11px] uppercase tracking-[0.16em] font-medium"
+                      style={{ color: accent }}
+                    >
+                      {p.title_en ?? "—"}
+                    </span>
+                    {!p.is_active && (
+                      <span className="rounded-full bg-slate-800/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-slate-500">
+                        Oculto
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Link
+                      href={`/admin/tienda/${p.id}`}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/70 text-slate-500 hover:bg-white hover:text-[var(--color-bronze)] transition"
+                      title="Editar"
+                    >
+                      <Pencil size={13} />
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => toggleActive(p.id, p.is_active)}
+                      disabled={togglingId === p.id}
+                      title={p.is_active ? "Ocultar de la tienda" : "Mostrar en la tienda"}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/70 text-slate-500 transition hover:bg-white hover:text-[var(--color-bronze)] disabled:opacity-50"
+                    >
+                      {p.is_active ? <Eye size={13} /> : <EyeOff size={13} />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Spanish title */}

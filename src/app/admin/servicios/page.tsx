@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { revalidatePublic } from "@/lib/revalidatePublic";
 import Link from "next/link";
 import { Plus, Clock, Banknote, Stethoscope, Pencil, Trash2 } from "lucide-react";
 
@@ -12,6 +13,7 @@ interface Service {
   duration_minutes: number | null;
   price: number | null;
   tone: "pink" | "green" | "blue" | null;
+  is_active: boolean;
 }
 
 const TONE_BG: Record<string, string> = {
@@ -34,7 +36,7 @@ export default function ServiciosPage() {
   useEffect(() => {
     supabase
       .from("services")
-      .select("id, title_es, title_en, duration_minutes, price, tone")
+      .select("id, title_es, title_en, duration_minutes, price, tone, is_active")
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (!error) setServices(data ?? []);
@@ -48,7 +50,7 @@ export default function ServiciosPage() {
     const { error } = await supabase.from("services").delete().eq("id", id);
     if (!error) {
       setServices((prev) => prev.filter((s) => s.id !== id));
-      fetch("/api/revalidate-public", { method: "POST" }).catch(() => {});
+      revalidatePublic();
     }
     setDeleting(null);
   }
@@ -113,6 +115,11 @@ export default function ServiciosPage() {
                     >
                       {s.title_en ?? "—"}
                     </span>
+                    {!s.is_active && (
+                      <span className="rounded-full bg-slate-800/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-slate-500">
+                        Oculto
+                      </span>
+                    )}
                   </div>
                   {/* Action buttons */}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

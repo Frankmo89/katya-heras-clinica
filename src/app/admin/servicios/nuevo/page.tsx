@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { uploadImage } from "@/lib/uploadImage";
+import { toFriendlyMessage } from "@/lib/errorMessages";
+import { revalidatePublic } from "@/lib/revalidatePublic";
 import Link from "next/link";
 import {
   ArrowLeft, Save, Plus, Trash2, Check, X,
@@ -38,16 +41,8 @@ const TONE_OPTIONS = [
 ] as const;
 
 // ── Storage upload ─────────────────────────────────────────────────────────
-// Requires a public "service-images" bucket in Supabase Storage.
 async function uploadToStorage(file: File): Promise<string> {
-  const ext  = file.name.split(".").pop() ?? "jpg";
-  const path = `services/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const { error } = await supabase.storage
-    .from("service-images")
-    .upload(path, file, { cacheControl: "3600" });
-  if (error) throw new Error(error.message);
-  const { data } = supabase.storage.from("service-images").getPublicUrl(path);
-  return data.publicUrl;
+  return uploadImage(file, "service-images", "services");
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────
@@ -144,11 +139,11 @@ export default function NuevoServicioPage() {
 
       if (dbError) throw new Error(dbError.message);
 
-      fetch("/api/revalidate-public", { method: "POST" }).catch(() => {});
+      revalidatePublic();
       setSaved(true);
       setTimeout(() => router.push("/admin/servicios"), 2200);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar el servicio.");
+      setError(toFriendlyMessage(err));
       setSaving(false);
     }
   }

@@ -23,6 +23,24 @@ export function ServiceCard({ svc }: { svc: Service }) {
   return (
     <div className="flex h-full flex-col gap-4 rounded-2xl bg-[var(--color-background)] p-8 shadow-[var(--shadow-sm)] transition-all duration-500 hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]">
 
+      {/* Image — falls back to a tinted placeholder when the service has no hero image */}
+      <div className="-mx-8 -mt-8 mb-1 aspect-[16/10] overflow-hidden rounded-t-2xl">
+        {svc.heroImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={svc.heroImage}
+            alt={copy.name}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div
+            className={`flex h-full w-full items-center justify-center font-serif text-5xl text-black/[0.08] ${surfaceBadge[svc.tone]}`}
+          >
+            {copy.name.charAt(0)}
+          </div>
+        )}
+      </div>
+
       {/* Tone badge */}
       <span
         className={`self-start rounded-full px-3.5 py-1.5 text-[11px] font-medium uppercase tracking-[0.16em] ${surfaceBadge[svc.tone]}`}

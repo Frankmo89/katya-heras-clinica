@@ -7,6 +7,8 @@ import type { Currency } from "@/lib/format";
 import { type ShopSettings, SHOP_SETTINGS_DEFAULTS } from "@/lib/shopSettings";
 import { type BookingSettings, BOOKING_SETTINGS_DEFAULTS } from "@/lib/bookingSettings";
 import { supabase } from "@/lib/supabase";
+import { validateImageFile, ImageValidationError } from "@/lib/uploadImage";
+import { revalidatePublic } from "@/lib/revalidatePublic";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -467,14 +469,6 @@ export default function ConfiguracionPage() {
 
   // ── Save clinic info ───────────────────────────────────────────────────────
 
-  /** Purges the Next.js full-route cache for all public pages that render
-   *  clinic_settings data so visitors see changes immediately. */
-  const revalidatePublic = () => {
-    fetch("/api/revalidate-public", { method: "POST" }).catch(() => {
-      // Non-blocking — revalidation failure does not affect the save UX
-    });
-  };
-
   const saveClinicInfo = async () => {
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clinicInfo.contact_email);
     if (!emailOk) {
@@ -547,6 +541,16 @@ export default function ConfiguracionPage() {
   // ── Upload hero image to Supabase Storage ────────────────────────────────
 
   const uploadHeroImage = async (file: File) => {
+    try {
+      validateImageFile(file);
+    } catch (err) {
+      showFeedback({
+        type: "error",
+        message: err instanceof ImageValidationError ? err.message : "Imagen inválida.",
+      });
+      return;
+    }
+
     setHeroUploading(true);
     const ext = file.name.split(".").pop() ?? "jpg";
     const fileName = `hero/hero-image.${ext}`;
@@ -598,6 +602,16 @@ export default function ConfiguracionPage() {
     storageName: string,
     fieldKey: keyof ClinicSettings,
   ) => {
+    try {
+      validateImageFile(file);
+    } catch (err) {
+      showFeedback({
+        type: "error",
+        message: err instanceof ImageValidationError ? err.message : "Imagen inválida.",
+      });
+      return;
+    }
+
     setCmsUploadingField(fieldKey);
     const ext = file.name.split(".").pop() ?? "jpg";
     const fileName = `cms/${storageName}.${ext}`;

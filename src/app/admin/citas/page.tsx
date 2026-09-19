@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { SERVICES } from "@/data/services";
+import { mapDbService, type DbService, type Service } from "@/data/services";
 
 // ── Today ISO date ─────────────────────────────────────────────────────────
 function getTodayIso(): string {
@@ -154,10 +154,13 @@ export default function CitasPage() {
   const [bookingsLoading, setBookingsLoading] = useState(true);
   const [search,          setSearch]          = useState("");
 
+  // Services catalog — same "services" table /servicios and /reservar read from.
+  const [services, setServices] = useState<Service[]>([]);
+
   // Manual booking form state
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualSlotId,   setManualSlotId]   = useState("");
-  const [manualService,  setManualService]  = useState(SERVICES[0]?.id ?? "");
+  const [manualService,  setManualService]  = useState("");
   const [manualName,     setManualName]     = useState("");
   const [manualEmail,    setManualEmail]    = useState("");
   const [manualPhone,    setManualPhone]    = useState("");
@@ -217,12 +220,24 @@ export default function CitasPage() {
     if (data?.contact_email) setClinicEmail(data.contact_email);
   }, []);
 
+  const fetchServices = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("services")
+      .select("id, title_es, title_en, subtitle_es, subtitle_en, description_es, description_en, duration_minutes, price, tone")
+      .order("created_at");
+    if (error) console.error("Error fetching services:", error);
+    const mapped = (data ?? []).map((row) => mapDbService(row as DbService));
+    setServices(mapped);
+    setManualService((prev) => prev || mapped[0]?.id || "");
+  }, []);
+
   useEffect(() => {
     fetchSlots();
     fetchBookings();
     fetchPatients();
     fetchClinicEmail();
-  }, [fetchSlots, fetchBookings, fetchPatients, fetchClinicEmail]);
+    fetchServices();
+  }, [fetchSlots, fetchBookings, fetchPatients, fetchClinicEmail, fetchServices]);
 
   // ── Agenda actions ─────────────────────────────────────────────────────
   const addSlot = async () => {
@@ -273,7 +288,7 @@ export default function CitasPage() {
 
       // Fire cancellation email — non-blocking, failure is silent to the user
       if (status === "cancelled" && booking && clinicEmail) {
-        const svc = SERVICES.find((s) => s.id === booking.service_id);
+        const svc = services.find((s) => s.id === booking.service_id);
         try {
           await fetch("/api/send-booking-notification", {
             method: "POST",
@@ -299,7 +314,7 @@ export default function CitasPage() {
 
   const resetManualForm = () => {
     setManualSlotId("");
-    setManualService(SERVICES[0]?.id ?? "");
+    setManualService(services[0]?.id ?? "");
     setManualName("");
     setManualEmail("");
     setManualPhone("");
@@ -741,7 +756,7 @@ export default function CitasPage() {
 
                 {filteredBookings.map((booking, idx) => {
                   const svcName =
-                    SERVICES.find((s) => s.id === booking.service_id)?.es.name ??
+                    services.find((s) => s.id === booking.service_id)?.es.name ??
                     booking.service_id;
                   return (
                     <div
@@ -980,7 +995,7 @@ export default function CitasPage() {
                   onChange={(e) => setManualService(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[var(--color-bronze)]"
                 >
-                  {SERVICES.map((s) => (
+                  {services.map((s) => (
                     <option key={s.id} value={s.id}>{s.es.name}</option>
                   ))}
                 </select>

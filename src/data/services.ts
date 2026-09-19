@@ -13,6 +13,7 @@ export interface Service {
   en: ServiceTranslation;
   duration: number;
   price: string;
+  heroImage?: string | null;
 }
 
 export const SERVICES: Service[] = [
@@ -126,6 +127,7 @@ export interface DbService {
   duration_minutes: number | null;
   price: number | null;
   tone: string | null;
+  hero_image?: string | null;
 }
 
 export function mapDbService(row: DbService): Service {
@@ -144,6 +146,7 @@ export function mapDbService(row: DbService): Service {
     },
     duration: row.duration_minutes ?? 60,
     price:    row.price != null ? String(Math.round(row.price)) : "",
+    heroImage: row.hero_image ?? null,
   };
 }
 
@@ -176,6 +179,7 @@ export interface ServiceDetailData {
   notFor: { es: string[]; en: string[] };
   faq: FaqItem[];
   related: string[];
+  galleryImages?: string[];
 }
 
 // ─────────────────────────────────────────────
