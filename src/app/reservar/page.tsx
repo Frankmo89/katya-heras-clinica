@@ -121,24 +121,12 @@ function ReservarPageContent() {
   const [cancelError,   setCancelError]   = useState<string | null>(null);
   const [cancelled,     setCancelled]     = useState(false);
 
-  // Slots are per-service (see 0030_available_slots_service_specific.sql), so
-  // this refetches whenever the chosen service changes, and clears any
-  // previously-picked date/time/slot — a slot id from a different service
-  // must never reach step 3. available_slots only ever holds bookable rows:
-  // generate_available_slots() only inserts non-conflicting candidates, and
-  // confirm_booking deletes a row outright the moment it's taken, so there's
-  // no is_booked flag to filter on here.
   useEffect(() => {
-    if (!serviceId) return;
     const load = async () => {
-      setSlotsLoading(true);
-      setDate(null);
-      setTime(null);
-      setSelectedSlotId(null);
       const { data, error } = await supabase
         .from("available_slots")
         .select("id, service_id, start_time")
-        .eq("service_id", serviceId)
+        .eq("is_booked", false)
         .gt("start_time", new Date().toISOString())
         .order("start_time");
       if (error) console.error("Error fetching available slots:", error);
@@ -146,7 +134,7 @@ function ReservarPageContent() {
       setSlotsLoading(false);
     };
     load();
-  }, [serviceId]);
+  }, []);
 
   // Single source of truth for the catalog — same "services" table the
   // /servicios page reads from, so booking step 1 never drifts out of sync
@@ -227,59 +215,58 @@ function ReservarPageContent() {
     URL.revokeObjectURL(url);
   };
 
-  // Submit booking via the confirm_booking RPC (see
-  // 0032_confirm_booking_rpc.sql) — a single atomic transaction that
-  // re-checks availability, inserts the booking, and clears every
-  // now-overlapping available_slots row (across all services), instead of
-  // the old two-step "insert, then best-effort mark this one slot taken".
-  // The confirmation ref is never generated client-side — it's only ever
-  // the one confirm_booking returns on success.
-  //
-  // p_slot_start is the exact start_time ISO string from the picked slot
-  // row, not a client-rebuilt Date from `date` + `time` — those two are
-  // display strings derived from the browser's local timezone and would
-  // risk drifting from the slot's real instant on a visitor whose browser
-  // isn't set to America/Tijuana.
+  // Submit booking to Supabase and advance to confirmation step.
+  // The confirmation ID is derived exclusively from the UUID that Supabase
+  // assigns — it is never generated or shown until the insert succeeds.
   const handleConfirm = async () => {
-    const slot = availableSlots.find((s) => s.id === selectedSlotId);
-    if (!slot || !date || !time || !name.trim() || !email.trim() || !phone.trim() || !svc) return;
+    if (!date || !time || !name.trim() || !email.trim() || !phone.trim() || !svc) return;
     const activeSvc = svc;
 
     setLoading(true);
     setError(null);
 
-    const { data, error: rpcError } = await supabase.rpc("confirm_booking", {
-      p_service_id:    serviceId,
-      p_slot_start:    slot.start_time,
-      p_patient_name:  name.trim(),
-      p_patient_email: email.trim(),
-      p_patient_phone: phone.trim(),
-      p_notes:         notes.trim() || null,
-    });
+    // Generate a display-only confirmation ref (shown to patient after DB success).
+    const yr  = new Date().getFullYear();
+    const ref = `KH-${yr}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
-    const result = data?.[0] as
-      | { success: boolean; booking_id: string | null; booking_ref: string | null; error_code: string | null }
-      | undefined;
+    const { error: dbError } = await supabase
+      .from("bookings")
+      .insert({
+        service_id:    serviceId,
+        date:          date.toISOString().split("T")[0],
+        time,
+        patient_name:  name.trim(),
+        patient_email: email.trim(),
+        patient_phone: phone.trim(),
+        notes:         notes.trim() || null,
+        booking_ref:   ref,
+      });
 
-    if (rpcError || !result?.success) {
+    if (dbError) {
       setLoading(false);
-      console.error("confirm_booking error:", rpcError?.message, result?.error_code);
-      if (result?.error_code === "slot_taken" || result?.error_code === "slot_blocked") {
-        setError("Alguien más acaba de reservar ese horario. Por favor elige otro.");
-      } else {
-        setError(
-          `No pudimos confirmar tu reserva. Por favor intenta de nuevo o llámanos al ${clinicInfo.whatsapp_number}.`
-        );
-      }
+      console.error("Supabase INSERT error:", dbError.code, dbError.message, dbError.details, dbError.hint);
+      setError(
+        `No pudimos confirmar tu reserva. Por favor intenta de nuevo o llámanos al ${clinicInfo.whatsapp_number}.`
+      );
       return;
+    }
+
+    // Mark the selected slot as taken so it no longer shows to other visitors.
+    // Best-effort: the booking is already confirmed in the DB regardless.
+    if (selectedSlotId) {
+      const { error: slotError } = await supabase
+        .from("available_slots")
+        .update({ is_booked: true })
+        .eq("id", selectedSlotId);
+      if (slotError) console.warn("[booking] Could not mark slot as booked:", slotError);
     }
 
     setLoading(false);
 
-    // Fire-and-forget internal notification — the booking is already
-    // confirmed in the DB. We intentionally do NOT await this: the patient
-    // sees the success screen immediately. If the email fails, it logs
-    // server-side but never surfaces an error to the patient.
+    // Fire-and-forget internal notification — DB insert already succeeded.
+    // We intentionally do NOT await this: the patient sees the success screen
+    // immediately. If the email fails, it logs server-side but never surfaces
+    // an error to the patient.
     fetch("/api/send-booking-notification", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
@@ -290,7 +277,7 @@ function ReservarPageContent() {
         service:      activeSvc.es.name,
         date:         date.toISOString().split("T")[0],
         time,
-        bookingRef:   result.booking_ref,
+        bookingRef:   ref,
         clinicEmail:  clinicInfo.contact_email,
         notes:        notes.trim() || undefined,
       }),
@@ -300,7 +287,7 @@ function ReservarPageContent() {
     });
 
     // Only reach here on confirmed DB success — safe to show the ref.
-    setBookingId(result.booking_ref ?? "");
+    setBookingId(ref);
     setStep(4);
   };
 
