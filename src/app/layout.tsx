@@ -17,6 +17,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: "Katya Heras Clínica de Osteopatía",
   description: "Osteopatía y bienestar holístico en Tecate, BC. Una sesión a la vez.",
 };
