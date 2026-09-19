@@ -1,12 +1,19 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
-import { Check, Calendar, Clock, ArrowRight, MapPin, MessageCircle } from "lucide-react";
-import { SERVICES } from "@/data/services";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { Check, Calendar, Clock, ArrowRight, MapPin, MessageCircle, AlertCircle } from "lucide-react";
+import { mapDbService, type DbService, type Service } from "@/data/services";
 import { Button } from "@/components/ui/Button";
 import { supabase } from "@/lib/supabase";
 import { useClinicSettings } from "@/context/ClinicSettingsContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { formatPrice, type Currency } from "@/lib/format";
+
+const UNAVAILABLE_SERVICE_NOTE = {
+  es: "El servicio de tu enlace ya no está disponible para reservar. Elige otra sesión de la lista.",
+  en: "The service from your link is no longer available to book. Please choose another session from the list.",
+};
 
 // ── Availability types ────────────────────────────────────────────────────
 type AvailableSlot = {
@@ -85,9 +92,15 @@ function buildWhatsAppUrl(
   return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
 }
 // ── Page ──────────────────────────────────────────────────────────────────
-export default function ReservarPage() {
+// useSearchParams() requires a Suspense boundary at the page root — see the
+// default export below.
+function ReservarPageContent() {
+  const searchParams = useSearchParams();
   const [step,      setStep]      = useState(1);
-  const [serviceId, setServiceId] = useState("estructural");
+  const [services,  setServices]  = useState<Service[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [serviceId, setServiceId] = useState("");
+  const [requestedServiceUnavailable, setRequestedServiceUnavailable] = useState(false);
   const [date,      setDate]      = useState<Date | null>(null);
   const [time,      setTime]      = useState<string | null>(null);
   const [name,      setName]      = useState("");
@@ -123,9 +136,45 @@ export default function ReservarPage() {
     load();
   }, []);
 
+  // Single source of truth for the catalog — same "services" table the
+  // /servicios page reads from, so booking step 1 never drifts out of sync
+  // with the public catalog. Filtering on is_active here is also what makes
+  // a hidden service impossible to book: even if a stale/hand-crafted link
+  // carries its id in the URL (?service=<id>), that id is only ever honored
+  // below if it appears in this active-only result set. An inactive or
+  // unknown id does NOT fall back to preselecting some other service —
+  // nothing is selected, so the patient sees the full list plus a note
+  // explaining why their link didn't preselect anything, and has to choose
+  // explicitly.
+  useEffect(() => {
+    const loadServices = async () => {
+      const { data, error } = await supabase
+        .from("services")
+        .select("id, title_es, title_en, subtitle_es, subtitle_en, description_es, description_en, duration_minutes, price, tone")
+        .eq("is_active", true)
+        .order("created_at");
+      if (error) console.error("Error fetching services:", error);
+      const mapped = (data ?? []).map((row) => mapDbService(row as DbService));
+      setServices(mapped);
+
+      const requestedId = searchParams.get("service");
+      if (requestedId == null) {
+        setServiceId((prev) => prev || mapped[0]?.id || "");
+      } else if (mapped.some((s) => s.id === requestedId)) {
+        setServiceId(requestedId);
+      } else {
+        setServiceId("");
+        setRequestedServiceUnavailable(true);
+      }
+      setServicesLoading(false);
+    };
+    loadServices();
+  }, [searchParams]);
+
   const { settings: clinicInfo, bookingSettings } = useClinicSettings();
+  const { lang } = useLanguage();
   const currency = clinicInfo.currency;
-  const svc = SERVICES.find((s) => s.id === serviceId)!;
+  const svc = services.find((s) => s.id === serviceId);
 
   // ── Availability helpers ────────────────────────────────────────────────
   const toIso = (d: Date) =>
@@ -170,7 +219,8 @@ export default function ReservarPage() {
   // The confirmation ID is derived exclusively from the UUID that Supabase
   // assigns — it is never generated or shown until the insert succeeds.
   const handleConfirm = async () => {
-    if (!date || !time || !name.trim() || !email.trim() || !phone.trim()) return;
+    if (!date || !time || !name.trim() || !email.trim() || !phone.trim() || !svc) return;
+    const activeSvc = svc;
 
     setLoading(true);
     setError(null);
@@ -224,7 +274,7 @@ export default function ReservarPage() {
         patientName:  name.trim(),
         patientEmail: email.trim(),
         patientPhone: phone.trim(),
-        service:      svc.es.name,
+        service:      activeSvc.es.name,
         date:         date.toISOString().split("T")[0],
         time,
         bookingRef:   ref,
@@ -255,14 +305,20 @@ export default function ReservarPage() {
     if (!bookingId) return;
     setCancelLoading(true);
     setCancelError(null);
-    const { error } = await supabase
-      .from("bookings")
-      .update({ is_cancelled: true })
-      .eq("booking_ref", bookingId)
-      .eq("patient_email", email.trim());
+    // cancel_booking is a security definer RPC (see
+    // 0026_cancel_booking_rpc.sql) — it binds booking_ref + patient_email
+    // to the same row inside the function itself, since there's no longer
+    // an anon RLS policy on bookings.is_cancelled at all. It returns
+    // `false` (not an error) for a wrong email, an unknown ref, or an
+    // already-cancelled booking, so this can't be used to probe whether a
+    // ref exists.
+    const { data: cancelled, error } = await supabase.rpc("cancel_booking", {
+      ref: bookingId,
+      email: email.trim(),
+    });
     setCancelLoading(false);
-    if (error) {
-      console.error("Cancel booking error:", error);
+    if (error || !cancelled) {
+      if (error) console.error("Cancel booking error:", error);
       setCancelError("No se pudo cancelar. Contáctanos directamente.");
       return;
     }
@@ -348,50 +404,81 @@ export default function ReservarPage() {
             <h2 className="mb-6 font-serif text-[24px] font-normal text-[var(--color-text)]">
               Elige un servicio
             </h2>
-            <div className="flex flex-col gap-3">
-              {SERVICES.map((s) => {
-                const sel = serviceId === s.id;
-                return (
-                  <label
-                    key={s.id}
-                    className={`flex cursor-pointer items-center justify-between rounded-xl border px-6 py-[18px] transition-all duration-300 ${
-                      sel
-                        ? "border-[var(--color-bronze)] bg-[rgba(192,138,94,0.08)]"
-                        : "border-[rgba(30,41,59,0.08)] bg-[var(--color-background)] hover:border-[rgba(30,41,59,0.16)]"
-                    }`}
+            {requestedServiceUnavailable && (
+              <div className="mb-6 flex items-start gap-3 rounded-xl bg-[var(--color-surface-pink)] px-5 py-4">
+                <AlertCircle size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-[var(--color-bronze)]" />
+                <p className="text-[13px] leading-[1.6] text-[var(--color-text)]">
+                  {UNAVAILABLE_SERVICE_NOTE[lang]}
+                </p>
+              </div>
+            )}
+            {servicesLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="h-[70px] animate-pulse rounded-xl bg-slate-100" />
+                ))}
+              </div>
+            ) : services.length === 0 ? (
+              <div className="rounded-xl bg-[var(--color-background-soft)] p-8 text-center">
+                <p className="text-[14px] text-[var(--color-text-muted)]">
+                  No hay servicios disponibles en este momento.{" "}
+                  <a
+                    href={`https://wa.me/${clinicInfo.whatsapp_number.replace(/\D/g, "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[var(--color-bronze)] underline-offset-2 hover:underline"
                   >
-                    <input
-                      type="radio"
-                      name="svc"
-                      checked={sel}
-                      onChange={() => setServiceId(s.id)}
-                      className="sr-only"
-                    />
-                    <div>
-                      <p className="mb-0.5 font-serif text-[18px] text-[var(--color-text)]">
-                        {s.es.name}
-                      </p>
-                      <p className="text-[13px] text-[var(--color-text-muted)]">
-                        {s.duration} min · {formatPrice(Number(s.price.replace(/,/g, '')), currency)}
-                      </p>
-                    </div>
-                    <div
-                      className={`inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border transition-all duration-300 ${
+                    Escríbenos por WhatsApp.
+                  </a>
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {services.map((s) => {
+                  const sel = serviceId === s.id;
+                  return (
+                    <label
+                      key={s.id}
+                      className={`flex cursor-pointer items-center justify-between rounded-xl border px-6 py-[18px] transition-all duration-300 ${
                         sel
-                          ? "border-[var(--color-bronze)] bg-[var(--color-bronze)] text-white"
-                          : "border-[rgba(30,41,59,0.2)] bg-transparent"
+                          ? "border-[var(--color-bronze)] bg-[rgba(192,138,94,0.08)]"
+                          : "border-[rgba(30,41,59,0.08)] bg-[var(--color-background)] hover:border-[rgba(30,41,59,0.16)]"
                       }`}
                     >
-                      {sel && <Check size={12} strokeWidth={2} />}
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
+                      <input
+                        type="radio"
+                        name="svc"
+                        checked={sel}
+                        onChange={() => setServiceId(s.id)}
+                        className="sr-only"
+                      />
+                      <div>
+                        <p className="mb-0.5 font-serif text-[18px] text-[var(--color-text)]">
+                          {s.es.name}
+                        </p>
+                        <p className="text-[13px] text-[var(--color-text-muted)]">
+                          {s.duration} min · {formatPrice(Number(s.price.replace(/,/g, '')), currency)}
+                        </p>
+                      </div>
+                      <div
+                        className={`inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border transition-all duration-300 ${
+                          sel
+                            ? "border-[var(--color-bronze)] bg-[var(--color-bronze)] text-white"
+                            : "border-[rgba(30,41,59,0.2)] bg-transparent"
+                        }`}
+                      >
+                        {sel && <Check size={12} strokeWidth={2} />}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
             <div className="mt-8 flex justify-end">
               <Button
                 variant="primary"
                 onClick={() => setStep(2)}
+                disabled={!svc}
                 icon={<ArrowRight size={14} strokeWidth={1.5} />}
               >
                 Continuar
@@ -401,7 +488,7 @@ export default function ReservarPage() {
         )}
 
         {/* ── Step 2: Date & time ──────────────────────────────────── */}
-        {step === 2 && (
+        {step === 2 && svc && (
           <div className="rounded-2xl bg-[var(--color-background)] p-6 md:p-10 shadow-[var(--shadow-sm)]">
             <h2 className="mb-2 font-serif text-[24px] font-normal text-[var(--color-text)]">
               Elige fecha y hora
@@ -492,7 +579,7 @@ export default function ReservarPage() {
         )}
 
         {/* ── Step 3: Contact details ──────────────────────────────── */}
-        {step === 3 && (
+        {step === 3 && svc && (
           <div className="rounded-2xl bg-[var(--color-background)] p-6 md:p-10 shadow-[var(--shadow-sm)]">
             <h2 className="mb-7 font-serif text-[24px] font-normal text-[var(--color-text)]">
               Tus datos
@@ -617,7 +704,7 @@ export default function ReservarPage() {
         )}
 
         {/* ── Step 4: Confirmation ─────────────────────────────────── */}
-        {step === 4 && (
+        {step === 4 && svc && (
           <div className="flex flex-col gap-5 pb-24">
 
             {/* Hero confirmation card */}
@@ -899,5 +986,13 @@ export default function ReservarPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ReservarPage() {
+  return (
+    <Suspense fallback={null}>
+      <ReservarPageContent />
+    </Suspense>
   );
 }
