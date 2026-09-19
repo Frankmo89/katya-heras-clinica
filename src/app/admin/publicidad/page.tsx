@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { authHeaders } from "@/lib/authFetch";
 import {
   Megaphone,
   Loader2,
@@ -115,7 +116,7 @@ export default function PublicidadPage() {
     try {
       const res = await fetch("/api/ai/publicidad", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
         body: JSON.stringify({ topic: final, folderFilter }),
       });
       const json = (await res.json()) as Pack;
@@ -361,7 +362,7 @@ export default function PublicidadPage() {
                 setRated(1);
                 await fetch("/api/ai/feedback", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: { "Content-Type": "application/json", ...(await authHeaders()) },
                   body: JSON.stringify({
                     rating: 1,
                     source: "publicidad",
@@ -382,7 +383,7 @@ export default function PublicidadPage() {
                 setRated(-1);
                 await fetch("/api/ai/feedback", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: { "Content-Type": "application/json", ...(await authHeaders()) },
                   body: JSON.stringify({
                     rating: -1,
                     source: "publicidad",

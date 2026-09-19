@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { logLearningEvent } from "@/lib/ai-learning";
+import { requireStaffSession } from "@/lib/requireStaffSession";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -102,6 +103,10 @@ async function askCorpus(
  */
 export async function POST(request: Request) {
   try {
+    if (!(await requireStaffSession(request))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const topic = String(body.topic || "").trim();
     const folderFilter = (body.folderFilter || "all") as FolderFilter;

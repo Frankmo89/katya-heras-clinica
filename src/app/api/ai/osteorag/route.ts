@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { logLearningEvent } from "@/lib/ai-learning";
+import { requireStaffSession } from "@/lib/requireStaffSession";
 
 export const runtime = "nodejs";
 
@@ -145,6 +146,10 @@ async function getOsteoBearer(base: string): Promise<
 
 export async function POST(request: Request) {
   try {
+    if (!(await requireStaffSession(request))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const question = String(body.question || "").trim();
     const patientName = String(body.patientName || "").trim();
@@ -184,12 +189,12 @@ export async function POST(request: Request) {
       headers.Authorization = `Bearer ${auth.token}`;
     }
 
+    // Only clinical context goes to the external corpus service — never the
+    // patient's name (or, if ever added, email/phone). patientName is used
+    // below only for the internal learning-event log, not this message.
     const message = [
       "Eres un asistente de estudio osteopático con corpus citado.",
       "NO diagnostiques ni prescribas. Responde solo con evidencia del corpus.",
-      patientName
-        ? `La terapeuta consulta en contexto de la paciente/paciente «${patientName}».`
-        : "",
       patientContext
         ? `Notas de contexto clínico (orientación de búsqueda, no como diagnóstico):\n${patientContext.slice(0, 1200)}`
         : "",

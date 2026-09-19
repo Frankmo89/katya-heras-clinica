@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { BookOpen, Loader2, Send, ThumbsUp, ThumbsDown } from "lucide-react";
+import { authHeaders } from "@/lib/authFetch";
 
 type FolderFilter = "all" | "escuela" | "libros" | "tesis";
 
@@ -60,7 +61,7 @@ export function OsteoRagConsult({ patientName, patientContext = "", patientId }:
     try {
       const res = await fetch("/api/ai/osteorag", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
         body: JSON.stringify({
           question: finalQ,
           patientName,
@@ -215,7 +216,7 @@ export function OsteoRagConsult({ patientName, patientContext = "", patientId }:
                 setRated(1);
                 await fetch("/api/ai/feedback", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: { "Content-Type": "application/json", ...(await authHeaders()) },
                   body: JSON.stringify({
                     rating: 1,
                     source: "osteorag",
@@ -237,7 +238,7 @@ export function OsteoRagConsult({ patientName, patientContext = "", patientId }:
                 setRated(-1);
                 await fetch("/api/ai/feedback", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: { "Content-Type": "application/json", ...(await authHeaders()) },
                   body: JSON.stringify({
                     rating: -1,
                     source: "osteorag",

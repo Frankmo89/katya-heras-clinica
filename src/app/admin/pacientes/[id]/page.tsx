@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { authHeaders } from "@/lib/authFetch";
 import { OsteoRagConsult } from "@/components/admin/OsteoRagConsult";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -230,14 +231,11 @@ export default function PacienteDetailPage() {
     setAiError(null);
     setAiData(null);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
       const res = await fetch("/api/ai/resumen-clinico", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          ...(await authHeaders()),
         },
         body: JSON.stringify({
           patientEmail: patient.email,

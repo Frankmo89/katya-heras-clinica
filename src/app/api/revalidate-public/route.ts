@@ -1,6 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+import { requireStaffSession } from "@/lib/requireStaffSession";
 
 /**
  * POST /api/revalidate-public
@@ -27,18 +27,7 @@ import { NextResponse } from "next/server";
  * static path string.
  */
 export async function POST(request: Request) {
-  const authHeader = request.headers.get("authorization") ?? "";
-  const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) {
+  if (!(await requireStaffSession(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

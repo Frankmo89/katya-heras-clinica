@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { logLearningEvent } from "@/lib/ai-learning";
+import { requireStaffSession } from "@/lib/requireStaffSession";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
+    if (!(await requireStaffSession(request))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const rating = Number(body.rating);
     if (rating !== 1 && rating !== -1) {
