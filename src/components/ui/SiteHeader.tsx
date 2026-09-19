@@ -115,9 +115,10 @@ export function SiteHeader() {
             {/* Desktop CTA */}
             <Link
               href="/reservar"
-              className="hidden rounded-full bg-[var(--color-bronze)] px-[22px] py-2.5 font-sans text-[13px] uppercase tracking-widest text-white transition-colors duration-200 hover:bg-[var(--color-bronze-hover)] md:inline-flex"
+              className="inline-flex rounded-full bg-[var(--color-bronze)] px-3 py-2 font-sans text-[11px] uppercase tracking-widest text-white transition-colors duration-200 hover:bg-[var(--color-bronze-hover)] md:px-[22px] md:py-2.5 md:text-[13px]"
             >
-              {lang === "es" ? "Agendar Cita" : "Book Appointment"}
+              {lang === "es" ? "Agendar" : "Book"}
+              <span className="hidden md:inline">{lang === "es" ? " Cita" : " Appointment"}</span>
             </Link>
 
             {/* Mobile hamburger */}

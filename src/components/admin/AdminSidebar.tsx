@@ -10,6 +10,7 @@ import {
   CalendarDays,
   Stethoscope,
   ShoppingBag,
+  Megaphone,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { label: "Citas",         href: "/admin/citas",         icon: CalendarDays },
   { label: "Servicios",     href: "/admin/servicios",     icon: Stethoscope },
   { label: "Tienda",        href: "/admin/tienda",        icon: ShoppingBag },
+  { label: "Publicidad",    href: "/admin/publicidad",    icon: Megaphone },
   { label: "Configuración", href: "/admin/configuracion", icon: Settings },
 ] as const;
 
