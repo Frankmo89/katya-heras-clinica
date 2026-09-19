@@ -66,17 +66,29 @@ function supabaseClient() {
 }
 
 // ── Metadata ──────────────────────────────────────────────────────────────
+// Per-service share data: without this, sharing any /servicios/[id] link
+// (WhatsApp, Facebook, iMessage previews) fell back to the site-wide
+// opengraph-image.png for every service. Using each service's own
+// hero_image here — when it has one — makes the preview actually show
+// what's being booked.
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { data } = await supabaseClient()
     .from("services")
-    .select("title_es, description_es")
+    .select("title_es, description_es, hero_image")
     .eq("id", id)
     .single();
   if (!data) return {};
+
+  const title       = `${data.title_es} · Katya Heras Clínica`;
+  const description = (data.description_es as string | null) ?? undefined;
+  const image       = (data.hero_image as string | null) || "/opengraph-image.png";
+
   return {
-    title:       `${data.title_es} · Katya Heras Clínica`,
-    description: (data.description_es as string | null) ?? undefined,
+    title,
+    description,
+    openGraph: { title, description, images: [{ url: image }] },
+    twitter:   { card: "summary_large_image", title, description, images: [image] },
   };
 }
 
