@@ -569,7 +569,8 @@ function ReservarPageContent() {
               <Button variant="secondary" onClick={() => setStep(1)}>Volver</Button>
               <Button
                 variant="primary"
-                onClick={() => { if (date && time) setStep(3); }}
+                onClick={() => setStep(3)}
+                disabled={!date || !time}
                 icon={<ArrowRight size={14} strokeWidth={1.5} />}
               >
                 Continuar
