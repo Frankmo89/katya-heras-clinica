@@ -242,7 +242,21 @@ function ReservarPageContent() {
         result?.error_code === "slot_blocked" ||
         result?.error_code === "slot_unavailable"
       ) {
-        setError("Alguien más acaba de reservar ese horario. Por favor elige otro.");
+        // The picked slot is gone (raced by someone else, blocked, or stale
+        // because the nightly regeneration didn't run) — staying on step 3
+        // with the same selection would just fail the same way again if the
+        // patient hits Confirmar a second time. Clear it and send them back
+        // to the calendar, which remounts fresh (BookingCalendar re-queries
+        // available_slots on mount) so the stale slot can't be re-offered.
+        setSelectedSlot(null);
+        setDate(null);
+        setTime(null);
+        setError(
+          lang === "es"
+            ? "Ese horario acaba de ocuparse. Elige otro."
+            : "That time slot was just taken. Please pick another."
+        );
+        setStep(2);
       } else {
         setError(
           `No pudimos confirmar tu reserva. Por favor intenta de nuevo o llámanos al ${clinicInfo.whatsapp_number}.`
@@ -460,10 +474,18 @@ function ReservarPageContent() {
               {svc.es.name} · {svc.duration} min
             </p>
 
+            {error && (
+              <div className="mb-4 flex items-start gap-3 rounded-xl bg-[var(--color-surface-pink)] px-5 py-4">
+                <AlertCircle size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-[var(--color-bronze)]" />
+                <p className="text-[13px] leading-[1.6] text-[var(--color-text)]">{error}</p>
+              </div>
+            )}
+
             <BookingCalendar
               serviceId={serviceId}
               selectedSlotId={selectedSlot?.id ?? null}
               onSelectSlot={(slot) => {
+                setError(null);
                 setDate(slot.displayDate);
                 setTime(slot.displayTime);
                 setSelectedSlot(slot);
