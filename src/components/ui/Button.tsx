@@ -34,8 +34,13 @@ export function Button({
   className = "",
   disabled = false,
 }: ButtonProps) {
-  const classes = `${base} ${variantClasses[variant]} ${className} ${
-    disabled ? "opacity-50 cursor-not-allowed pointer-events-none" : ""
+  // Disabled state overrides the variant's own color entirely (rather than
+  // just dimming it) — a bronze/primary button at reduced opacity still
+  // reads as an active, clickable accent color, not as "off".
+  const classes = `${base} ${className} ${
+    disabled
+      ? "bg-[rgba(30,41,59,0.08)] text-[rgba(30,41,59,0.35)] shadow-none cursor-not-allowed pointer-events-none"
+      : variantClasses[variant]
   }`;
   const content = (
     <>

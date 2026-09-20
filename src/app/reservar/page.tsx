@@ -9,17 +9,11 @@ import { supabase } from "@/lib/supabase";
 import { useClinicSettings } from "@/context/ClinicSettingsContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { formatPrice, type Currency } from "@/lib/format";
+import { BookingCalendar, type PickedSlot } from "@/components/ui/BookingCalendar";
 
 const UNAVAILABLE_SERVICE_NOTE = {
   es: "El servicio de tu enlace ya no está disponible para reservar. Elige otra sesión de la lista.",
   en: "The service from your link is no longer available to book. Please choose another session from the list.",
-};
-
-// ── Availability types ────────────────────────────────────────────────────
-type AvailableSlot = {
-  id: string;
-  service_id: string | null;
-  start_time: string; // ISO timestamptz from Supabase
 };
 
 // ── Step indicator ────────────────────────────────────────────────────────
@@ -111,41 +105,26 @@ function ReservarPageContent() {
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState<string | null>(null);
 
-  // ── Availability from Supabase (whitelist) ─────────────────────────────
-  const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
-  const [slotsLoading,   setSlotsLoading]   = useState(true);
-  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  // The picked slot, straight from BookingCalendar — its startIso is the
+  // authoritative value handed to confirm_booking; displayDate/displayTime
+  // are Tijuana wall-clock, safe for the browser-local display code below.
+  const [selectedSlot, setSelectedSlot] = useState<PickedSlot | null>(null);
 
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelError,   setCancelError]   = useState<string | null>(null);
   const [cancelled,     setCancelled]     = useState(false);
 
-  // Slots are per-service (see 0030_available_slots_service_specific.sql), so
-  // this refetches whenever the chosen service changes, and clears any
-  // previously-picked date/time/slot — a slot id from a different service
-  // must never reach step 3. available_slots only ever holds bookable rows:
-  // generate_available_slots() only inserts non-conflicting candidates, and
-  // confirm_booking deletes a row outright the moment it's taken, so there's
-  // no is_booked flag to filter on here.
+  // A slot from a different service must never reach step 3 — clear the
+  // pick whenever the chosen service changes. BookingCalendar re-fetches
+  // per service internally.
   useEffect(() => {
-    if (!serviceId) return;
-    const load = async () => {
-      setSlotsLoading(true);
+    const reset = () => {
       setDate(null);
       setTime(null);
-      setSelectedSlotId(null);
-      const { data, error } = await supabase
-        .from("available_slots")
-        .select("id, service_id, start_time")
-        .eq("service_id", serviceId)
-        .gt("start_time", new Date().toISOString())
-        .order("start_time");
-      if (error) console.error("Error fetching available slots:", error);
-      setAvailableSlots(data ?? []);
-      setSlotsLoading(false);
+      setSelectedSlot(null);
     };
-    load();
+    reset();
   }, [serviceId]);
 
   // Single source of truth for the catalog — same "services" table the
@@ -187,10 +166,6 @@ function ReservarPageContent() {
   const { lang } = useLanguage();
   const currency = clinicInfo.currency;
   const svc = services.find((s) => s.id === serviceId);
-
-  // ── Availability helpers ────────────────────────────────────────────────
-  const toIso = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
   // Generate an .ics file in-memory and trigger download.
   // RFC 5545 minimal — works with Apple Calendar, Google, Outlook.
@@ -236,13 +211,11 @@ function ReservarPageContent() {
   // the one confirm_booking returns on success.
   //
   // p_slot_start is the exact start_time ISO string from the picked slot
-  // row, not a client-rebuilt Date from `date` + `time` — those two are
-  // display strings derived from the browser's local timezone and would
-  // risk drifting from the slot's real instant on a visitor whose browser
-  // isn't set to America/Tijuana.
+  // (selectedSlot.startIso), not a client-rebuilt Date from `date` + `time`
+  // — those two are display strings derived from BookingCalendar's Tijuana
+  // conversion and are only ever used for on-screen display downstream.
   const handleConfirm = async () => {
-    const slot = availableSlots.find((s) => s.id === selectedSlotId);
-    if (!slot || !date || !time || !name.trim() || !email.trim() || !phone.trim() || !svc) return;
+    if (!selectedSlot || !date || !time || !name.trim() || !email.trim() || !phone.trim() || !svc) return;
     const activeSvc = svc;
 
     setLoading(true);
@@ -250,7 +223,7 @@ function ReservarPageContent() {
 
     const { data, error: rpcError } = await supabase.rpc("confirm_booking", {
       p_service_id:    serviceId,
-      p_slot_start:    slot.start_time,
+      p_slot_start:    selectedSlot.startIso,
       p_patient_name:  name.trim(),
       p_patient_email: email.trim(),
       p_patient_phone: phone.trim(),
@@ -311,7 +284,7 @@ function ReservarPageContent() {
   const handleModify = () => {
     setDate(null);
     setTime(null);
-    setSelectedSlotId(null);
+    setSelectedSlot(null);
     setBookingId("");
     setCancelled(false);
     setCancelConfirm(false);
@@ -343,43 +316,16 @@ function ReservarPageContent() {
     setCancelConfirm(false);
   };
 
-  // ── Build calendar data from whitelist ───────────────────────────────
-  type SlotDay = { isoDate: string; date: Date; slots: { id: string; time: string }[] };
-  const slotsByDate = new Map<string, SlotDay>();
-  availableSlots.forEach((slot) => {
-    const d       = new Date(slot.start_time);
-    const isoDate = toIso(d);
-    const timeStr = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    if (!slotsByDate.has(isoDate)) {
-      const dayDate = new Date(d);
-      dayDate.setHours(0, 0, 0, 0);
-      slotsByDate.set(isoDate, { isoDate, date: dayDate, slots: [] });
-    }
-    slotsByDate.get(isoDate)!.slots.push({ id: slot.id, time: timeStr });
-  });
-
-  const availableDays = Array.from(slotsByDate.values()).sort((a, b) =>
-    a.isoDate.localeCompare(b.isoDate)
-  );
-
-  // ── Shared time-slot pill class builder
-  const timeSlotCls = (selected: boolean) =>
-    `cursor-pointer rounded-full border px-[22px] py-2.5 font-sans text-[14px] transition-all duration-300 ${
-      selected
-        ? "border-[var(--color-bronze)] bg-[var(--color-bronze)] text-white"
-        : "border-[rgba(30,41,59,0.15)] bg-[var(--color-background)] text-[var(--color-text)] hover:border-[var(--color-bronze)]"
-    }`;
-
   return (
     <div className="pb-0 pt-[72px]">
       <div className="mx-auto max-w-[920px] px-5 md:px-8">
 
         {/* Page header */}
         <p className="mb-4 text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)]">
-          Reservar
+          {lang === "es" ? "Reservar" : "Book"}
         </p>
         <h1 className="mb-8 md:mb-14 font-serif text-[clamp(2.5rem,4vw,3.5rem)] font-light leading-[1.05] tracking-[-0.01em] text-[var(--color-text)]">
-          Tres pasos. Sin prisas.
+          {lang === "es" ? "Tres pasos. Sin prisas." : "Three steps. No rush."}
         </h1>
 
         {/* ── Bookings disabled banner ──────────────────────────────── */}
@@ -409,10 +355,10 @@ function ReservarPageContent() {
           <>
         {/* ── Stepper ──────────────────────────────────────────────── */}
         <div className="mb-8 flex flex-wrap gap-8 rounded-2xl bg-[var(--color-background-soft)] px-5 py-4 md:px-8 md:py-6">
-          <StepIndicator n="1" label="Servicio"     active={step === 1} done={step > 1} />
-          <StepIndicator n="2" label="Fecha y hora" active={step === 2} done={step > 2} />
-          <StepIndicator n="3" label="Tus datos"    active={step === 3} done={step > 3} />
-          <StepIndicator n="4" label="Listo"        active={step === 4} done={false} />
+          <StepIndicator n="1" label={lang === "es" ? "Servicio" : "Service"}     active={step === 1} done={step > 1} />
+          <StepIndicator n="2" label={lang === "es" ? "Fecha y hora" : "Date & time"} active={step === 2} done={step > 2} />
+          <StepIndicator n="3" label={lang === "es" ? "Tus datos" : "Your details"}    active={step === 3} done={step > 3} />
+          <StepIndicator n="4" label={lang === "es" ? "Listo" : "Done"}        active={step === 4} done={false} />
         </div>
 
         {/* ── Step 1: Service selector ─────────────────────────────── */}
@@ -506,91 +452,35 @@ function ReservarPageContent() {
 
         {/* ── Step 2: Date & time ──────────────────────────────────── */}
         {step === 2 && svc && (
-          <div className="rounded-2xl bg-[var(--color-background)] p-6 md:p-10 shadow-[var(--shadow-sm)]">
-            <h2 className="mb-2 font-serif text-[24px] font-normal text-[var(--color-text)]">
-              Elige fecha y hora
+          <div className="rounded-2xl bg-[var(--color-background)] p-5 md:p-10 shadow-[var(--shadow-sm)]">
+            <h2 className="mb-1 font-serif text-[20px] md:text-[24px] font-normal text-[var(--color-text)]">
+              {lang === "es" ? "Elige fecha y hora" : "Choose a date and time"}
             </h2>
-            <p className="mb-7 text-[14px] text-[var(--color-text-muted)]">
+            <p className="mb-4 text-[13px] text-[var(--color-text-muted)]">
               {svc.es.name} · {svc.duration} min
             </p>
 
-            {/* Day-grouped slot grid */}
-            {slotsLoading ? (
-              <div className="mb-8 space-y-5">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i}>
-                    <div className="mb-2 h-3 w-36 rounded-full bg-slate-100 animate-pulse" />
-                    <div className="flex flex-wrap gap-2">
-                      {Array.from({ length: 4 }).map((_, j) => (
-                        <div key={j} className="h-[38px] w-16 rounded-full bg-slate-100 animate-pulse" />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : availableDays.length === 0 ? (
-              <div className="mb-8 rounded-xl bg-[var(--color-background-soft)] p-8 text-center">
-                <p className="text-[14px] text-[var(--color-text-muted)]">
-                  No hay citas disponibles en este momento.{" "}
-                  <a
-                    href={`https://wa.me/${clinicInfo.whatsapp_number.replace(/\D/g, "")}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--color-bronze)] underline-offset-2 hover:underline"
-                  >
-                    Escríbenos por WhatsApp.
-                  </a>
-                </p>
-              </div>
-            ) : (
-              <div className="mb-8 space-y-6">
-                {availableDays.map((slotDay) => {
-                  const dayLabel = slotDay.date.toLocaleDateString("es-MX", {
-                    weekday: "long",
-                    day: "numeric",
-                    month: "long",
-                  });
-                  return (
-                    <div key={slotDay.isoDate}>
-                      <p className="mb-2.5 text-xs font-semibold uppercase tracking-[0.15em] text-[var(--color-text-muted)]">
-                        {dayLabel}
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {slotDay.slots.map((s) => {
-                          const selected =
-                            time === s.time &&
-                            date !== null &&
-                            toIso(date) === slotDay.isoDate;
-                          return (
-                            <button
-                              key={s.id}
-                              onClick={() => {
-                                setDate(slotDay.date);
-                                setTime(s.time);
-                                setSelectedSlotId(s.id);
-                              }}
-                              className={timeSlotCls(selected)}
-                            >
-                              {s.time}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <BookingCalendar
+              serviceId={serviceId}
+              selectedSlotId={selectedSlot?.id ?? null}
+              onSelectSlot={(slot) => {
+                setDate(slot.displayDate);
+                setTime(slot.displayTime);
+                setSelectedSlot(slot);
+              }}
+            />
 
-            <div className="mt-10 flex justify-between">
-              <Button variant="secondary" onClick={() => setStep(1)}>Volver</Button>
+            <div className="mt-6 flex justify-between">
+              <Button variant="secondary" onClick={() => setStep(1)}>
+                {lang === "es" ? "Volver" : "Back"}
+              </Button>
               <Button
                 variant="primary"
                 onClick={() => setStep(3)}
-                disabled={!date || !time}
+                disabled={!selectedSlot}
                 icon={<ArrowRight size={14} strokeWidth={1.5} />}
               >
-                Continuar
+                {lang === "es" ? "Continuar" : "Continue"}
               </Button>
             </div>
           </div>

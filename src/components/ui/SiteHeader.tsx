@@ -117,8 +117,8 @@ export function SiteHeader() {
               href="/reservar"
               className="inline-flex rounded-full bg-[var(--color-bronze)] px-3 py-2 font-sans text-[11px] uppercase tracking-widest text-white transition-colors duration-200 hover:bg-[var(--color-bronze-hover)] md:px-[22px] md:py-2.5 md:text-[13px]"
             >
-              {lang === "es" ? "Agendar" : "Book"}
-              <span className="hidden md:inline">{lang === "es" ? " Cita" : " Appointment"}</span>
+              <span className="md:hidden">{lang === "es" ? "Agendar" : "Book"}</span>
+              <span className="hidden md:inline">{lang === "es" ? "Agendar cita" : "Book appointment"}</span>
             </Link>
 
             {/* Mobile hamburger */}
