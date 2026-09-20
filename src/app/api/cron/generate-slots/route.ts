@@ -27,11 +27,13 @@ export async function GET(request: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const today = new Date();
-  const from = today.toISOString().split("T")[0];
-  const toDate = new Date(today);
-  toDate.setDate(toDate.getDate() + 60);
-  const to = toDate.toISOString().split("T")[0];
+  // toISOString() would give the UTC calendar date, which during Tijuana
+  // evenings is already tomorrow — compute "today" in the clinic's own
+  // timezone instead, then add 60 calendar days as plain UTC-based date
+  // math (no timezone reinterpretation involved, so no DST/offset risk).
+  const from = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tijuana" }).format(new Date());
+  const [y, m, d] = from.split("-").map(Number);
+  const to = new Date(Date.UTC(y, m - 1, d + 60)).toISOString().split("T")[0];
 
   const { data, error } = await supabase.rpc("generate_available_slots", {
     p_from: from,

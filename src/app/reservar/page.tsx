@@ -264,7 +264,11 @@ function ReservarPageContent() {
     if (rpcError || !result?.success) {
       setLoading(false);
       console.error("confirm_booking error:", rpcError?.message, result?.error_code);
-      if (result?.error_code === "slot_taken" || result?.error_code === "slot_blocked") {
+      if (
+        result?.error_code === "slot_taken" ||
+        result?.error_code === "slot_blocked" ||
+        result?.error_code === "slot_unavailable"
+      ) {
         setError("Alguien más acaba de reservar ese horario. Por favor elige otro.");
       } else {
         setError(

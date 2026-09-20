@@ -52,7 +52,6 @@ type Booking = {
   notes: string | null;
   status: string;
   is_manual: boolean;
-  is_cancelled: boolean;
   created_at: string;
 };
 
@@ -191,15 +190,11 @@ export default function CitasPage() {
     const { data, error } = await supabase
       .from("bookings")
       .select("*")
-      .eq("is_cancelled", false)
+      .neq("status", "cancelled")
       .order("date", { ascending: true })
       .order("time", { ascending: true });
     if (error) console.error("Error fetching bookings:", error);
-    // Filter out admin-cancelled; handles case where migration 0014 hasn't run yet
-    const filtered = (data ?? []).filter(
-      (b: Booking) => !b.status || b.status !== "cancelled"
-    );
-    setBookings(filtered);
+    setBookings(data ?? []);
     setBookingsLoading(false);
   }, []);
 
