@@ -22,6 +22,37 @@ function dateToIso(d: Date): string {
 }
 
 /**
+ * Converts a "YYYY-MM-DD" + "HH:MM" pair, understood as Tijuana wall-clock
+ * time, to the equivalent UTC ISO instant — independent of the admin's own
+ * browser timezone. Standard two-pass timezone-offset trick: read the
+ * target numbers as if they were already UTC, ask what Tijuana's wall
+ * clock reads for that instant, then correct by the difference.
+ */
+function tijuanaWallClockToIso(dateStr: string, timeStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const [hh, mm] = timeStr.split(":").map(Number);
+  const naiveUtc = Date.UTC(y, m - 1, d, hh, mm, 0);
+
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Tijuana",
+      hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    })
+      .formatToParts(new Date(naiveUtc))
+      .map((p) => [p.type, p.value])
+  );
+  const tijuanaReadingAsUtc = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour), Number(parts.minute), Number(parts.second)
+  );
+  const offset = tijuanaReadingAsUtc - naiveUtc;
+
+  return new Date(naiveUtc - offset).toISOString();
+}
+
+/**
  * Returns an array of (null | 1-based day number) representing a calendar grid
  * for the given year/month, starting on Sunday.
  */
@@ -156,15 +187,18 @@ export default function CitasPage() {
   // Services catalog — same "services" table /servicios and /reservar read from.
   const [services, setServices] = useState<Service[]>([]);
 
-  // Manual booking form state
+  // Manual booking form state — date/time are free-form (not limited to
+  // available_slots), since staff routinely book outside published hours.
   const [showManualForm, setShowManualForm] = useState(false);
-  const [manualSlotId,   setManualSlotId]   = useState("");
+  const [manualDate,     setManualDate]     = useState("");
+  const [manualTime,     setManualTime]     = useState("");
   const [manualService,  setManualService]  = useState("");
   const [manualName,     setManualName]     = useState("");
   const [manualEmail,    setManualEmail]    = useState("");
   const [manualPhone,    setManualPhone]    = useState("");
   const [manualNotes,    setManualNotes]    = useState("");
   const [savingManual,   setSavingManual]   = useState(false);
+  const [manualError,    setManualError]    = useState<string | null>(null);
 
   // Patient typeahead
   const [patients,            setPatients]            = useState<Patient[]>([]);
@@ -308,7 +342,8 @@ export default function CitasPage() {
   };
 
   const resetManualForm = () => {
-    setManualSlotId("");
+    setManualDate("");
+    setManualTime("");
     setManualService(services[0]?.id ?? "");
     setManualName("");
     setManualEmail("");
@@ -316,6 +351,7 @@ export default function CitasPage() {
     setManualNotes("");
     setSelectedPatient(null);
     setShowPatientDropdown(false);
+    setManualError(null);
   };
 
   const selectPatient = (p: Patient) => {
@@ -333,46 +369,54 @@ export default function CitasPage() {
     setManualPhone("");
   };
 
+  // Calls admin_create_booking (see
+  // 0036_admin_create_booking_rpc.sql) instead of inserting directly — the
+  // RPC sets starts_at/ends_at and relies on the bookings_no_overlap
+  // exclusion constraint for the same overlap guarantee confirm_booking
+  // gets on the public site, then deletes every now-overlapping
+  // available_slots row (any service) so the slot stops showing as
+  // bookable to patients. Unlike confirm_booking, date/time are free-form
+  // here — staff aren't limited to a pre-generated available_slots row,
+  // since manual bookings routinely fall outside published hours.
   const saveManualBooking = async () => {
-    if (!manualSlotId || !manualName.trim()) return;
+    if (!manualDate || !manualTime || !manualService || !manualName.trim()) return;
     setSavingManual(true);
+    setManualError(null);
 
-    const slot = slots.find((s) => s.id === manualSlotId);
-    if (!slot) { setSavingManual(false); return; }
+    // Interpret the picked date/time as Tijuana wall-clock (the clinic's
+    // own local time), not the admin's browser timezone.
+    const p_slot_start = tijuanaWallClockToIso(manualDate, manualTime);
 
-    const d       = new Date(slot.start_time);
-    const dateIso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const timeStr = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    const ref     = `KH-${new Date().getFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-
-    const { error: bookingError } = await supabase.from("bookings").insert({
-      service_id:    manualService,
-      date:          dateIso,
-      time:          timeStr,
-      patient_name:  manualName.trim(),
-      patient_email: manualEmail.trim() || null,
-      patient_phone: manualPhone.trim() || null,
-      notes:         manualNotes.trim() || null,
-      booking_ref:   ref,
-      is_manual:     true,
-      status:        "confirmed",
+    const { data, error: rpcError } = await supabase.rpc("admin_create_booking", {
+      p_service_id:    manualService,
+      p_slot_start,
+      p_patient_name:  manualName.trim(),
+      p_patient_email: manualEmail.trim() || null,
+      p_patient_phone: manualPhone.trim() || null,
+      p_notes:         manualNotes.trim() || null,
     });
 
-    if (bookingError) {
-      showFeedback({ type: "error", message: "Error al guardar la cita." });
+    const result = data?.[0] as
+      | { success: boolean; booking_id: string | null; booking_ref: string | null; error_code: string | null }
+      | undefined;
+
+    if (rpcError || !result?.success) {
+      console.error("admin_create_booking error:", rpcError?.message, result?.error_code);
+      setManualError(
+        result?.error_code === "slot_overlap"
+          ? "Esa hora se cruza con otra cita ya agendada. Elige otra hora."
+          : result?.error_code === "invalid_service"
+          ? "Selecciona un servicio válido."
+          : result?.error_code === "missing_fields"
+          ? "Falta el nombre de la paciente."
+          : "Error al guardar la cita. Intenta de nuevo."
+      );
       setSavingManual(false);
       return;
     }
 
-    // Mark slot as booked
-    const { error: slotError } = await supabase
-      .from("available_slots")
-      .update({ is_booked: true })
-      .eq("id", manualSlotId);
-    if (slotError) console.warn("Could not mark slot as booked:", slotError);
-
     setSavingManual(false);
-    showFeedback({ type: "success", message: `Cita creada. Ref: ${ref}` });
+    showFeedback({ type: "success", message: `Cita creada. Ref: ${result.booking_ref}` });
     setShowManualForm(false);
     resetManualForm();
     fetchSlots();
@@ -916,68 +960,38 @@ export default function CitasPage() {
 
             {/* Modal body */}
             <div className="flex flex-col gap-4 overflow-y-auto px-6 py-5">
-              {/* Slot picker */}
-              <div>
-                <label className="mb-1.5 block text-xs uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
-                  Horario <span className="normal-case text-red-400">*</span>
-                </label>
-                {slots.length === 0 ? (
-                  <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
-                    No hay horarios disponibles. Añade uno en la pestaña{" "}
-                    <button
-                      className="underline underline-offset-2"
-                      onClick={() => { setShowManualForm(false); setActiveTab("agenda"); }}
-                    >
-                      Agenda y Disponibilidad
-                    </button>
-                    .
-                  </p>
-                ) : (
-                  <div className="max-h-48 overflow-y-auto pr-1">
-                    {(() => {
-                      type ModalSlotGroup = { isoDate: string; label: string; items: typeof slots };
-                      const groups: ModalSlotGroup[] = [];
-                      const seen = new Map<string, number>();
-                      slots.forEach((slot) => {
-                        const isoDate = slot.start_time.slice(0, 10);
-                        const { date: dateLabel } = formatSlotTime(slot.start_time);
-                        if (!seen.has(isoDate)) {
-                          seen.set(isoDate, groups.length);
-                          groups.push({ isoDate, label: dateLabel, items: [slot] });
-                        } else {
-                          groups[seen.get(isoDate)!].items.push(slot);
-                        }
-                      });
-                      return groups.map((group, gi) => (
-                        <div key={group.isoDate} className={gi === 0 ? "" : "mt-3"}>
-                          <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400 capitalize">
-                            {group.label}
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {group.items.map((slot) => {
-                              const { time: timeStr } = formatSlotTime(slot.start_time);
-                              const isSelected = manualSlotId === slot.id;
-                              return (
-                                <button
-                                  key={slot.id}
-                                  type="button"
-                                  onClick={() => setManualSlotId(slot.id)}
-                                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                                    isSelected
-                                      ? "bg-[var(--color-bronze)] text-white"
-                                      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                                  }`}
-                                >
-                                  {timeStr}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                )}
+              {manualError && (
+                <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2.5 text-sm text-red-600">
+                  {manualError}
+                </p>
+              )}
+
+              {/* Date + time — free-form, not limited to available_slots,
+                  since manual bookings routinely fall outside published
+                  hours (early/late walk-ins, exceptions). */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
+                    Fecha <span className="normal-case text-red-400">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={manualDate}
+                    onChange={(e) => setManualDate(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[var(--color-bronze)]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
+                    Hora (Tijuana) <span className="normal-case text-red-400">*</span>
+                  </label>
+                  <input
+                    type="time"
+                    value={manualTime}
+                    onChange={(e) => setManualTime(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[var(--color-bronze)]"
+                  />
+                </div>
               </div>
 
               {/* Service */}
@@ -1127,7 +1141,7 @@ export default function CitasPage() {
               </button>
               <button
                 onClick={saveManualBooking}
-                disabled={!manualSlotId || !manualName.trim() || savingManual}
+                disabled={!manualDate || !manualTime || !manualService || !manualName.trim() || savingManual}
                 className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-bronze)] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[var(--color-bronze-hover)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {savingManual ? (
