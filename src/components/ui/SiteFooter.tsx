@@ -53,6 +53,15 @@ function formatSchedule(days: DaySchedule[], lang: "es" | "en"): string[] {
   });
 }
 
+/** Accepts either a full URL or a bare handle (with or without a leading
+ *  @) and returns a real instagram.com link either way — the admin field
+ *  has held a bare handle in practice, not a URL. */
+function instagramHref(value: string): string {
+  const trimmed = value.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://instagram.com/${trimmed.replace(/^@/, "")}`;
+}
+
 function LanguageToggle() {
   const { lang, setLang } = useLanguage();
   return (
@@ -109,12 +118,22 @@ export function SiteFooter() {
           <p className="mb-3.5 text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)]">
             {t("Visítanos", "Visit")}
           </p>
-          <p className="text-sm leading-7 text-[var(--color-text)]">
-            {settings.physical_address}<br />
-            <span className="text-[var(--color-text)]/50">
-              {t("Cita previa", "By appointment")}
-            </span>
-          </p>
+          {loading ? (
+            // Avoids ever flashing the hardcoded fallback address from
+            // CLINIC_SETTINGS_DEFAULTS while the real value is still
+            // in-flight — the same reason "Horario" already skeletons.
+            <div className="space-y-2 pt-0.5">
+              <div className="h-3 w-40 animate-pulse rounded bg-slate-200" />
+              <div className="h-3 w-24 animate-pulse rounded bg-slate-200" />
+            </div>
+          ) : (
+            <p className="text-sm leading-7 text-[var(--color-text)]">
+              {settings.physical_address}<br />
+              <span className="text-[var(--color-text)]/50">
+                {t("Cita previa", "By appointment")}
+              </span>
+            </p>
+          )}
         </div>
 
         {/* Hours */}
@@ -149,21 +168,41 @@ export function SiteFooter() {
           <p className="mb-3.5 text-xs uppercase tracking-[0.2em] text-[var(--color-bronze)]">
             {t("Contacto", "Contact")}
           </p>
-          <p className="text-sm leading-7">
-            <Link
-              href={`mailto:${settings.contact_email}`}
-              className="text-[var(--color-text)] transition-colors hover:text-[var(--color-bronze)]"
-            >
-              {settings.contact_email}
-            </Link>
-            <br />
-            <Link
-              href={`tel:${settings.whatsapp_number.replace(/[\s-]/g, "")}`}
-              className="text-[var(--color-text)] transition-colors hover:text-[var(--color-bronze)]"
-            >
-              {settings.whatsapp_number}
-            </Link>
-          </p>
+          {loading ? (
+            <div className="space-y-2 pt-0.5">
+              <div className="h-3 w-36 animate-pulse rounded bg-slate-200" />
+              <div className="h-3 w-28 animate-pulse rounded bg-slate-200" />
+            </div>
+          ) : (
+            <p className="text-sm leading-7">
+              <Link
+                href={`mailto:${settings.contact_email}`}
+                className="text-[var(--color-text)] transition-colors hover:text-[var(--color-bronze)]"
+              >
+                {settings.contact_email}
+              </Link>
+              <br />
+              <Link
+                href={`tel:${settings.whatsapp_number.replace(/[\s-]/g, "")}`}
+                className="text-[var(--color-text)] transition-colors hover:text-[var(--color-bronze)]"
+              >
+                {settings.whatsapp_number}
+              </Link>
+              {settings.instagram_url && (
+                <>
+                  <br />
+                  <Link
+                    href={instagramHref(settings.instagram_url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[var(--color-text)] transition-colors hover:text-[var(--color-bronze)]"
+                  >
+                    Instagram
+                  </Link>
+                </>
+              )}
+            </p>
+          )}
         </div>
 
       </div>

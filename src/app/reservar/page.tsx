@@ -166,11 +166,16 @@ function ReservarPageContent() {
   const { lang } = useLanguage();
   const currency = clinicInfo.currency;
   const svc = services.find((s) => s.id === serviceId);
+  // Service name/tagline/description in whichever language the visitor is
+  // browsing in — mapDbService() already falls back to Spanish when the
+  // English field is empty, so this is safe even for services that only
+  // have a Spanish translation filled in.
+  const svcCopy = svc ? (lang === "es" ? svc.es : svc.en) : null;
 
   // Generate an .ics file in-memory and trigger download.
   // RFC 5545 minimal — works with Apple Calendar, Google, Outlook.
   const downloadIcs = () => {
-    if (!date || !time || !svc) return;
+    if (!date || !time || !svc || !svcCopy) return;
     const [hh, mm] = time.split(":").map(Number);
     const start    = new Date(date);
     start.setHours(hh, mm, 0, 0);
@@ -187,7 +192,7 @@ function ReservarPageContent() {
       `DTSTAMP:${fmt(new Date())}`,
       `DTSTART:${fmt(start)}`,
       `DTEND:${fmt(end)}`,
-      `SUMMARY:${svc.es.name} · Katya Heras Clínica`,
+      `SUMMARY:${svcCopy.name} · Katya Heras Clínica`,
       `LOCATION:${clinicInfo.physical_address.replace(/,/g, "\\,")}`,
       `DESCRIPTION:Sesión confirmada — ${bookingId}. Llega 5 min antes. Política de cancelación 24h.`,
       "END:VEVENT",
@@ -271,6 +276,10 @@ function ReservarPageContent() {
     // confirmed in the DB. We intentionally do NOT await this: the patient
     // sees the success screen immediately. If the email fails, it logs
     // server-side but never surfaces an error to the patient.
+    //
+    // service is deliberately activeSvc.es.name, not lang-aware: this email
+    // goes to the clinic (Katya), whose entire template (route.ts) is
+    // hardcoded Spanish regardless of the patient's browsing language.
     fetch("/api/send-booking-notification", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
@@ -413,6 +422,7 @@ function ReservarPageContent() {
               <div className="flex flex-col gap-3">
                 {services.map((s) => {
                   const sel = serviceId === s.id;
+                  const sCopy = lang === "es" ? s.es : s.en;
                   return (
                     <label
                       key={s.id}
@@ -431,7 +441,7 @@ function ReservarPageContent() {
                       />
                       <div>
                         <p className="mb-0.5 font-serif text-[18px] text-[var(--color-text)]">
-                          {s.es.name}
+                          {sCopy.name}
                         </p>
                         <p className="text-[13px] text-[var(--color-text-muted)]">
                           {s.duration} min · {formatPrice(Number(s.price.replace(/,/g, '')), currency)}
@@ -471,7 +481,7 @@ function ReservarPageContent() {
               {lang === "es" ? "Elige fecha y hora" : "Choose a date and time"}
             </h2>
             <p className="mb-4 text-[13px] text-[var(--color-text-muted)]">
-              {svc.es.name} · {svc.duration} min
+              {svcCopy?.name} · {svc.duration} min
             </p>
 
             {error && (
@@ -568,7 +578,7 @@ function ReservarPageContent() {
             <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--color-background-soft)] p-6">
               <div>
                 <p className="mb-1 font-serif text-[18px] text-[var(--color-text)]">
-                  {svc.es.name}
+                  {svcCopy?.name}
                 </p>
                 <div className="flex flex-wrap gap-3.5 text-[13px] text-[var(--color-text-muted)]">
                   {date && (
@@ -667,7 +677,7 @@ function ReservarPageContent() {
                     Sesión
                   </p>
                   <p className="mb-1.5 font-serif text-[22px] font-normal leading-[1.2] text-[var(--color-text)]">
-                    {svc.es.name}
+                    {svcCopy?.name}
                   </p>
                   <div className="flex flex-wrap items-center gap-3 text-[14px] text-[var(--color-text-muted)]">
                     <span className="inline-flex items-center gap-1.5">
@@ -750,7 +760,10 @@ function ReservarPageContent() {
                     {clinicInfo.physical_address}
                   </p>
                   <a
-                    href={clinicInfo.maps_url}
+                    href={
+                      clinicInfo.maps_url.trim() ||
+                      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clinicInfo.physical_address)}`
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-1 inline-flex items-center gap-1.5 text-[13px] tracking-[0.04em] text-[var(--color-bronze)] transition-colors hover:text-[var(--color-bronze-hover)]"
@@ -775,6 +788,11 @@ function ReservarPageContent() {
                     Imprimir
                   </Button>
                   {date && time && (
+                    // serviceName stays svc.es.name here too — this message
+                    // is what the patient sends TO the clinic, and
+                    // buildWhatsAppUrl's whole template (above) is
+                    // hardcoded Spanish for Katya to read, regardless of
+                    // the patient's own browsing language.
                     <a
                       href={buildWhatsAppUrl(clinicInfo.whatsapp_number, {
                         bookingId,

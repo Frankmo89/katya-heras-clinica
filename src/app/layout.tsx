@@ -16,10 +16,28 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+// Single description for every page that doesn't set its own (only
+// servicios/[id] currently does) — this is what WhatsApp/iMessage/Slack
+// link previews show. There's no localized routing on this site (no
+// /en/... segment), so link previews can't vary by viewer language the
+// way the client-side ES/EN toggle does; this stays the one description
+// shown to every viewer regardless of language.
+const SITE_DESCRIPTION =
+  "Osteopatía y masaje clínico para dolor de espalda, cuello y ciática. Tecate, BC — a minutos de San Diego. Reserva en línea.";
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   title: "Katya Heras Clínica de Osteopatía",
-  description: "Osteopatía y bienestar holístico en Tecate, BC. Una sesión a la vez.",
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    title: "Katya Heras Clínica de Osteopatía",
+    description: SITE_DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Katya Heras Clínica de Osteopatía",
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export default function RootLayout({

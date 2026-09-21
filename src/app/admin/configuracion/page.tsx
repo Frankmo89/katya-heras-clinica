@@ -194,6 +194,7 @@ export default function ConfiguracionPage() {
   const [infoLoading, setInfoLoading]   = useState(true);
   const [infoSaving, setInfoSaving]     = useState(false);
   const [emailError, setEmailError]     = useState<string | null>(null);
+  const [mapsUrlError, setMapsUrlError] = useState<string | null>(null);
 
   // Shop settings state
   const [shopInfo, setShopInfo]       = useState<ShopSettings>(SHOP_SETTINGS_DEFAULTS);
@@ -476,6 +477,20 @@ export default function ConfiguracionPage() {
       return;
     }
     setEmailError(null);
+
+    // This field must be an actual link (used as-is for the "Abrir en
+    // Google Maps" button on the public site) — a plain address here, as
+    // production had, silently breaks that link. Empty is fine: the public
+    // site falls back to a Maps search built from the physical address.
+    const mapsUrl = clinicInfo.maps_url.trim();
+    if (mapsUrl !== "" && !/^https?:\/\//i.test(mapsUrl)) {
+      setMapsUrlError(
+        "Debe ser un enlace que empiece con https://, no una dirección. Ejemplo: https://maps.app.goo.gl/AbC123"
+      );
+      return;
+    }
+    setMapsUrlError(null);
+
     setInfoSaving(true);
     const { error } = await supabase
       .from("clinic_settings")
@@ -1213,17 +1228,29 @@ export default function ConfiguracionPage() {
                 {/* Maps URL */}
                 <div className="sm:col-span-2">
                   <label className="block text-xs uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-1.5">
-                    URL de Google Maps
+                    URL de Google Maps <span className="normal-case">(opcional)</span>
                   </label>
                   <input
                     type="url"
                     value={clinicInfo.maps_url}
-                    onChange={(e) =>
-                      setClinicInfo((prev) => ({ ...prev, maps_url: e.target.value }))
-                    }
-                    className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-bronze)] focus:border-transparent"
-                    placeholder="https://maps.google.com/?q=..."
+                    onChange={(e) => {
+                      setClinicInfo((prev) => ({ ...prev, maps_url: e.target.value }));
+                      setMapsUrlError(null);
+                    }}
+                    className={`w-full text-sm border rounded-xl px-3 py-2.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-bronze)] focus:border-transparent ${
+                      mapsUrlError ? "border-red-300 bg-red-50" : "border-slate-200"
+                    }`}
+                    placeholder="https://maps.app.goo.gl/AbC123"
                   />
+                  {mapsUrlError ? (
+                    <p className="mt-1 text-xs text-red-500">{mapsUrlError}</p>
+                  ) : (
+                    <p className="mt-1 text-xs text-slate-400">
+                      Abre tu ubicación en Google Maps, toca &quot;Compartir&quot; y pega el enlace
+                      aquí. Ejemplo: https://maps.app.goo.gl/AbC123 — si lo dejas vacío, el sitio
+                      público busca la dirección de arriba en Maps directamente.
+                    </p>
+                  )}
                 </div>
 
                 {/* Instagram */}

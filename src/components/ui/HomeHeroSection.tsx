@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useLanguage } from "@/context/LanguageContext";
 
@@ -46,6 +46,13 @@ export function HomeHeroSection({
   const { lang } = useLanguage();
   const c = COPY[lang];
   const [reduceMotion, setReduceMotion] = useState(false);
+  // iOS Low Power Mode (and some other autoplay-blocking contexts) rejects
+  // video.play() and leaves the browser showing a native play-button
+  // overlay on the poster frame instead of actually looping the video —
+  // looks broken. Once play() fails, fall back to the plain poster image
+  // for good (no retry loop, no visible button either way).
+  const [videoFailed, setVideoFailed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -57,7 +64,14 @@ export function HomeHeroSection({
 
   const videoSrc = (heroVideoUrl && heroVideoUrl.trim()) || DEFAULT_HERO_REEL;
   const posterSrc = (heroImageUrl && heroImageUrl.trim()) || DEFAULT_POSTER;
-  const showVideo = Boolean(videoSrc) && !reduceMotion;
+  const showVideo = Boolean(videoSrc) && !reduceMotion && !videoFailed;
+
+  useEffect(() => {
+    if (!showVideo) return;
+    const video = videoRef.current;
+    if (!video) return;
+    video.play()?.catch(() => setVideoFailed(true));
+  }, [showVideo, videoSrc]);
 
   return (
     /* Breathing room under sticky nav pill (~72px) — Mobbin-style air */
@@ -66,6 +80,7 @@ export function HomeHeroSection({
         {/* Full-bleed media */}
         {showVideo ? (
           <video
+            ref={videoRef}
             className="absolute inset-0 h-full w-full scale-[1.06] object-cover"
             autoPlay
             muted

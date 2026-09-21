@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Users, CalendarCheck, TrendingUp, ChevronRight, UserPlus } from "lucide-react";
+import { Users, CalendarCheck, TrendingUp, ChevronRight, UserPlus, AlertTriangle, CalendarClock } from "lucide-react";
 import Link from "next/link";
 
 interface Stats {
   totalPatients: number;
   todayBookings: number;
   monthBookings: number;
+  futureSlots: number;
 }
 
 interface RecentPatient {
@@ -50,6 +51,7 @@ export default function AdminDashboard() {
     totalPatients: 0,
     todayBookings: 0,
     monthBookings: 0,
+    futureSlots: 0,
   });
   const [recentPatients, setRecentPatients] = useState<RecentPatient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +67,7 @@ export default function AdminDashboard() {
         .toISOString()
         .split("T")[0];
 
-      const [patientsRes, todayRes, monthRes, recentRes] = await Promise.all([
+      const [patientsRes, todayRes, monthRes, futureSlotsRes, recentRes] = await Promise.all([
         supabase.from("patients").select("id", { count: "exact", head: true }),
         supabase
           .from("bookings")
@@ -75,6 +77,14 @@ export default function AdminDashboard() {
           .from("bookings")
           .select("id", { count: "exact", head: true })
           .gte("date", firstOfMonth),
+        // How many bookable slots remain — the cron/pg_cron job that
+        // regenerates these can fail silently (Supabase plan without
+        // pg_cron, a bug, an expired CRON_SECRET); this count is how Katya
+        // notices before /reservar quietly runs dry.
+        supabase
+          .from("available_slots")
+          .select("id", { count: "exact", head: true })
+          .gt("start_time", new Date().toISOString()),
         supabase
           .from("patients")
           .select("id, full_name, phone, created_at")
@@ -86,6 +96,7 @@ export default function AdminDashboard() {
         totalPatients: patientsRes.count ?? 0,
         todayBookings: todayRes.count   ?? 0,
         monthBookings: monthRes.count   ?? 0,
+        futureSlots:   futureSlotsRes.count ?? 0,
       });
       setRecentPatients((recentRes.data as RecentPatient[]) ?? []);
       setLoading(false);
@@ -149,6 +160,65 @@ export default function AdminDashboard() {
           </Link>
         ))}
       </div>
+
+      {/* ── Available-slots watchdog ────────────────────────────────
+          The nightly regeneration job can fail silently (pg_cron
+          unavailable on this Supabase plan, an expired CRON_SECRET, a
+          bug) — this is how Katya notices before /reservar quietly shows
+          nothing to book. Graduated: red once it's actually empty, amber
+          once it's getting low, plain otherwise. */}
+      {!loading && (
+        <Link
+          href="/admin/citas"
+          className={`mb-10 flex items-center gap-4 rounded-3xl p-6 shadow-[var(--shadow-sm)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] ${
+            stats.futureSlots === 0
+              ? "bg-red-50 text-red-700"
+              : stats.futureSlots < 20
+              ? "bg-amber-50 text-amber-700"
+              : "bg-white text-[var(--color-text)]"
+          }`}
+        >
+          <div
+            className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+              stats.futureSlots === 0
+                ? "bg-red-100"
+                : stats.futureSlots < 20
+                ? "bg-amber-100"
+                : "bg-[var(--color-surface-blue)]"
+            }`}
+          >
+            {stats.futureSlots < 20 ? (
+              <AlertTriangle size={18} strokeWidth={1.5} />
+            ) : (
+              <CalendarClock size={18} strokeWidth={1.5} className="text-[var(--color-bronze)]" />
+            )}
+          </div>
+          <div className="flex-1">
+            <p className="font-serif text-[20px] font-light leading-none">
+              {stats.futureSlots}{" "}
+              <span className="text-[13px] font-sans font-normal">
+                horarios disponibles (próximos 60 días)
+              </span>
+            </p>
+            {stats.futureSlots === 0 ? (
+              <p className="mt-1 text-[13px]">
+                No hay horarios — revisa la generación nocturna en /admin/citas o corre{" "}
+                <code className="rounded bg-red-100 px-1 py-0.5 text-[12px]">
+                  generate_available_slots
+                </code>{" "}
+                manualmente.
+              </p>
+            ) : stats.futureSlots < 20 ? (
+              <p className="mt-1 text-[13px]">Quedan pocos — vale la pena revisar pronto.</p>
+            ) : (
+              <p className="mt-1 text-[13px] text-[var(--color-text-muted)]">
+                La calendarización nocturna está funcionando.
+              </p>
+            )}
+          </div>
+          <ChevronRight size={16} strokeWidth={1.5} className="shrink-0 text-[var(--color-text-muted)]" />
+        </Link>
+      )}
 
       {/* ── Recent patients ─────────────────────────────────────── */}
       <div className="rounded-3xl border border-slate-100 bg-white shadow-[var(--shadow-sm)]">

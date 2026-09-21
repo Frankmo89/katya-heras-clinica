@@ -28,3 +28,11 @@
   --font-serif: var(--font-serif);
   --font-sans: var(--font-sans);
 }
+
+/* Safari/iOS shows a native play-button overlay on any <video> whose
+   autoplay gets blocked (e.g. iOS Low Power Mode) — the hero video falls
+   back to a still poster in that case (see HomeHeroSection.tsx), but this
+   hides the button outright so there's no flash of it beforehand either. */
+video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+}
