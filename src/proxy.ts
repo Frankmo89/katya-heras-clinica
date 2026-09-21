@@ -12,7 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // This requires session state to be readable from the request, which is
 // why src/lib/supabase.ts now uses createBrowserClient (cookie-backed)
 // instead of the plain createClient (localStorage-only, invisible here).
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
