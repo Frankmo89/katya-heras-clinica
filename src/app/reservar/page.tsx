@@ -54,8 +54,13 @@ function StepIndicator({
 const fieldCls =
   "w-full rounded-xl border border-[rgba(30,41,59,0.12)] bg-[var(--color-background)] px-4 py-3 font-sans text-[15px] text-[var(--color-text)] transition-colors focus:border-[var(--color-bronze)] focus:outline-none";
 // ── WhatsApp deep-link builder ───────────────────────────────────────────────
+// This message is composed on the PATIENT's phone and sent BY them, so it
+// goes out in whichever language they booked in — unlike the internal
+// notification email (handleConfirm, below), which always goes to Katya in
+// Spanish regardless of the patient's own language.
 function buildWhatsAppUrl(
   whatsappNumber: string,
+  lang: "es" | "en",
   p: {
     bookingId: string;
     patientName: string;
@@ -69,13 +74,13 @@ function buildWhatsAppUrl(
 ): string {
   // Strip everything that isn’t a digit — wa.me expects pure digits in intl format
   const clean = whatsappNumber.replace(/\D/g, "");
-  const formattedDate = p.date.toLocaleDateString("es-MX", {
+  const formattedDate = p.date.toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
   });
-  const msg = [
+  const msgEs = [
     "Hola, acabo de agendar una cita \uD83C\uDF3F",
     "",
     `Ref: ${p.bookingId}`,
@@ -83,6 +88,15 @@ function buildWhatsAppUrl(
     `Servicio: ${p.serviceName} (${p.duration}\u00a0min \u00b7 ${formatPrice(p.price, p.currency)})`,
     `Fecha: ${formattedDate} a las ${p.time}\u00a0h`,
   ].join("\n");
+  const msgEn = [
+    "Hi, I just booked a session \ud83c\udf3f",
+    "",
+    `Ref: ${p.bookingId}`,
+    `Patient: ${p.patientName}`,
+    `Service: ${p.serviceName} (${p.duration}\u00a0min \u00b7 ${formatPrice(p.price, p.currency)})`,
+    `Date: ${formattedDate} at ${p.time}`,
+  ].join("\n");
+  const msg = lang === "es" ? msgEs : msgEn;
   return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
 }
 // ── Page ──────────────────────────────────────────────────────────────────
@@ -659,11 +673,19 @@ function ReservarPageContent() {
                 Te espero.
               </h2>
               <p className="mx-auto max-w-[480px] text-[16px] leading-[1.65] text-[var(--color-text-muted)]">
-                Te mandé un correo a{" "}
-                <strong className="font-medium text-[var(--color-text)]">
-                  {email || "tu correo"}
-                </strong>{" "}
-                con todos los detalles. Revisa también la carpeta de spam por si acaso.
+                {lang === "es" ? (
+                  <>
+                    Tu referencia es{" "}
+                    <strong className="font-medium text-[var(--color-text)]">{bookingId}</strong>.
+                    Katya te confirmará por WhatsApp o por teléfono.
+                  </>
+                ) : (
+                  <>
+                    Your reference is{" "}
+                    <strong className="font-medium text-[var(--color-text)]">{bookingId}</strong>.
+                    Katya will confirm by WhatsApp or by phone.
+                  </>
+                )}
               </p>
             </div>
 
@@ -788,16 +810,15 @@ function ReservarPageContent() {
                     Imprimir
                   </Button>
                   {date && time && (
-                    // serviceName stays svc.es.name here too — this message
-                    // is what the patient sends TO the clinic, and
-                    // buildWhatsAppUrl's whole template (above) is
-                    // hardcoded Spanish for Katya to read, regardless of
-                    // the patient's own browsing language.
+                    // Sent in the patient's own language (lang) — this
+                    // message is composed on their phone, unlike the
+                    // internal notification email which always goes to
+                    // Katya in Spanish.
                     <a
-                      href={buildWhatsAppUrl(clinicInfo.whatsapp_number, {
+                      href={buildWhatsAppUrl(clinicInfo.whatsapp_number, lang, {
                         bookingId,
                         patientName: name,
-                        serviceName: svc.es.name,
+                        serviceName: svcCopy?.name ?? "",
                         duration: svc.duration,
                         price: Number(svc.price.replace(/,/g, '')),
                         currency,
