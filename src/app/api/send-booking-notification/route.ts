@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import { rateLimit, clientIp } from "@/lib/rateLimit";
 
 if (!process.env.RESEND_API_KEY) {
   console.warn(
@@ -10,23 +12,26 @@ if (!process.env.RESEND_API_KEY) {
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ── Payload shape sent by the booking page ────────────────────────────────────
-type ActionType = "CREATE" | "CANCEL" | "MODIFY";
+// This route used to accept clinicEmail and every display field (patient
+// name, service, date, notes...) directly from the request body, with no
+// server-side lookup at all — anyone could POST an arbitrary recipient and
+// arbitrary content through it. clinicEmail in particular meant this was a
+// fully open mail relay, not just a content-forgery risk. Now the client
+// supplies only enough to look the booking up and say which lifecycle
+// event fired; the recipient (clinic_settings.contact_email) and every
+// displayed field come from the database.
+type ActionType = "CREATE" | "CANCEL";
 
-type BookingNotificationPayload = {
-  actionType?: ActionType;
-  patientName: string;
-  patientEmail?: string | null;
-  patientPhone?: string | null;
-  service: string;
-  date: string;   // "YYYY-MM-DD"
-  time: string;   // "HH:MM"
-  bookingRef?: string | null;
-  clinicEmail: string;
-  notes?: string;
+type RequestPayload = {
+  bookingId: string;
+  bookingRef: string;
+  actionType: ActionType;
 };
 
-// ── Sanitise user content to prevent accidental HTML injection ────────────────
+const RECENCY_MINUTES = 15;
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -36,7 +41,6 @@ function esc(s: string): string {
     .replace(/'/g, "&#039;");
 }
 
-// ── Per-action visual config ──────────────────────────────────────────────────
 const ACTION_CONFIG: Record<ActionType, { color: string; label: string; subText: string; subject: (n: string) => string }> = {
   CREATE: {
     color:   "#C08A5E",
@@ -50,15 +54,8 @@ const ACTION_CONFIG: Record<ActionType, { color: string; label: string; subText:
     subText: "La siguiente cita ha sido cancelada en el sistema:",
     subject: (n) => `❌ [Katya Heras] Cita cancelada · ${n}`,
   },
-  MODIFY: {
-    color:   "#5a7fa3",
-    label:   "CITA MODIFICADA",
-    subText: "Los datos de la siguiente cita han sido actualizados:",
-    subject: (n) => `✏️ [Katya Heras] Cita modificada · ${n}`,
-  },
 };
 
-// ── Table row helper ──────────────────────────────────────────────────────────
 function row(label: string, value: string, shaded: boolean): string {
   const bg = shaded ? "background:#F8FAFC;" : "";
   return `
@@ -75,9 +72,20 @@ function row(label: string, value: string, shaded: boolean): string {
     </tr>`;
 }
 
-// ── HTML email builder ────────────────────────────────────────────────────────
-function buildHtml(p: BookingNotificationPayload, formattedDate: string): string {
-  const action = ACTION_CONFIG[p.actionType ?? "CREATE"];
+interface EmailData {
+  actionType: ActionType;
+  patientName: string;
+  patientEmail: string | null;
+  patientPhone: string | null;
+  service: string;
+  formattedDate: string;
+  time: string;
+  bookingRef: string;
+  notes: string | null;
+}
+
+function buildHtml(p: EmailData): string {
+  const action = ACTION_CONFIG[p.actionType];
 
   const emailRow = p.patientEmail
     ? row("Email", `<span style="font-family:Arial,sans-serif;font-size:14px;">${esc(p.patientEmail)}</span>`, false)
@@ -89,9 +97,7 @@ function buildHtml(p: BookingNotificationPayload, formattedDate: string): string
     ? row("Notas", `<span style="font-family:Arial,sans-serif;font-size:14px;color:#64748B;font-style:italic;">${esc(p.notes)}</span>`, true)
     : "";
   const refShaded = !p.notes && !p.patientPhone;
-  const refRow = p.bookingRef
-    ? row("Referencia", `<span style="font-family:'Courier New',monospace;font-size:12px;color:#94A3B8;">${esc(p.bookingRef)}</span>`, refShaded)
-    : "";
+  const refRow = row("Referencia", `<span style="font-family:'Courier New',monospace;font-size:12px;color:#94A3B8;">${esc(p.bookingRef)}</span>`, refShaded);
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -108,7 +114,6 @@ function buildHtml(p: BookingNotificationPayload, formattedDate: string): string
              style="background:#ffffff;border:1px solid #E2E8F0;border-radius:16px;
                     overflow:hidden;max-width:560px;width:100%;">
 
-        <!-- ─── Header ─── -->
         <tr>
           <td style="background:${action.color};padding:28px 36px;">
             <p style="margin:0;font-family:Arial,sans-serif;font-size:10px;
@@ -121,7 +126,6 @@ function buildHtml(p: BookingNotificationPayload, formattedDate: string): string
           </td>
         </tr>
 
-        <!-- ─── Sub-header label ─── -->
         <tr>
           <td style="padding:20px 36px 0;font-family:Arial,sans-serif;font-size:13px;
                      color:#64748B;">
@@ -129,13 +133,12 @@ function buildHtml(p: BookingNotificationPayload, formattedDate: string): string
           </td>
         </tr>
 
-        <!-- ─── Details table ─── -->
         <tr>
           <td style="padding:20px 36px 32px;">
             <table width="100%" cellpadding="0" cellspacing="0"
                    style="border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;">
               ${row("Servicio",    esc(p.service),                                                                                       false)}
-              ${row("Fecha",       `${esc(formattedDate)} &middot; ${esc(p.time)}&thinsp;h`,                                             true)}
+              ${row("Fecha",       `${esc(p.formattedDate)} &middot; ${esc(p.time)}&thinsp;h`,                                             true)}
               ${emailRow}
               ${phoneRow}
               ${notesRow}
@@ -144,7 +147,6 @@ function buildHtml(p: BookingNotificationPayload, formattedDate: string): string
           </td>
         </tr>
 
-        <!-- ─── Footer ─── -->
         <tr>
           <td style="padding:18px 36px;background:#F8FAFC;border-top:1px solid #E2E8F0;">
             <p style="margin:0;font-family:Arial,sans-serif;font-size:11px;color:#94A3B8;">
@@ -161,19 +163,87 @@ function buildHtml(p: BookingNotificationPayload, formattedDate: string): string
 </html>`;
 }
 
-// ── Route handler ─────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
-  try {
-    const body = (await request.json()) as BookingNotificationPayload;
+  const ip = clientIp(request);
+  if (!rateLimit(`send-booking-notification:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
 
-    // Validate required fields
-    const { patientName, service, date, time, clinicEmail } = body;
-    if (!patientName || !service || !date || !time || !clinicEmail) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  let body: RequestPayload;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const { bookingId, bookingRef, actionType } = body;
+  if (!bookingId || !bookingRef || (actionType !== "CREATE" && actionType !== "CANCEL")) {
+    return NextResponse.json({ error: "Missing or invalid fields" }, { status: 400 });
+  }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  // Same atomic-claim idiom as send-patient-confirmation: only a request
+  // that flips its own claim column from null to now() proceeds. CREATE
+  // additionally requires the booking to be recent (guards against
+  // replaying a very old booking's create-notification); CANCEL instead
+  // requires the booking to actually be cancelled right now — it can't be
+  // recency-gated against created_at, since a real cancellation can happen
+  // long after creation, and there's no separate cancelled_at column to
+  // gate on instead. Either way, the claim can only ever succeed once per
+  // booking per action type, so the DB itself is what proves the action
+  // being reported actually happened — not the client's say-so.
+  const claimColumn = actionType === "CREATE" ? "clinic_notified_created_at" : "clinic_notified_cancelled_at";
+  let query = supabase
+    .from("bookings")
+    .update({ [claimColumn]: new Date().toISOString() })
+    .eq("id", bookingId)
+    .eq("booking_ref", bookingRef)
+    .is(claimColumn, null);
+
+  if (actionType === "CREATE") {
+    const recencyCutoff = new Date(Date.now() - RECENCY_MINUTES * 60 * 1000).toISOString();
+    query = query.gt("created_at", recencyCutoff);
+  } else {
+    query = query.eq("status", "cancelled");
+  }
+
+  const { data: claimed, error: claimError } = await query
+    .select("patient_name, patient_email, patient_phone, service_id, date, time, notes")
+    .maybeSingle();
+
+  if (claimError) {
+    console.error("[send-booking-notification] Claim query error:", claimError.message);
+  }
+  if (!claimed) {
+    // Not found, already sent for this action type, too old (CREATE), or
+    // not actually cancelled yet (CANCEL) — same response either way, so
+    // this can't be used to probe which (bookingId, bookingRef) are valid.
+    return NextResponse.json({ sent: false });
+  }
+
+  try {
+    const { data: settings } = await supabase
+      .from("clinic_settings")
+      .select("contact_email")
+      .eq("id", 1)
+      .single();
+    const clinicEmail = settings?.contact_email;
+    if (!clinicEmail) {
+      console.error("[send-booking-notification] No contact_email on file — cannot send.");
+      return NextResponse.json({ sent: false });
     }
 
-    // Format the date for a human-readable display
-    const [y, m, d] = date.split("-").map(Number);
+    const { data: svc } = await supabase
+      .from("services")
+      .select("title_es")
+      .eq("id", claimed.service_id)
+      .maybeSingle();
+
+    const [y, m, d] = claimed.date.split("-").map(Number);
     const formattedDate = new Date(y, m - 1, d).toLocaleDateString("es-MX", {
       weekday: "long",
       day: "numeric",
@@ -181,22 +251,34 @@ export async function POST(request: NextRequest) {
       year: "numeric",
     });
 
+    const emailData: EmailData = {
+      actionType,
+      patientName:  claimed.patient_name,
+      patientEmail: claimed.patient_email,
+      patientPhone: claimed.patient_phone,
+      service:      svc?.title_es ?? claimed.service_id,
+      formattedDate,
+      time:         claimed.time,
+      bookingRef,
+      notes:        claimed.notes,
+    };
+
     const { error } = await resend.emails.send({
       from:    "Clinica Katya Heras <onboarding@resend.dev>",
       to:      [clinicEmail],
-      subject: ACTION_CONFIG[body.actionType ?? "CREATE"].subject(patientName),
-      html:    buildHtml(body, formattedDate),
+      subject: ACTION_CONFIG[actionType].subject(claimed.patient_name),
+      html:    buildHtml(emailData),
     });
 
     if (error) {
       console.error("[send-booking-notification] Resend error:", JSON.stringify(error));
-      return NextResponse.json({ error: "Failed to send email" }, { status: 500 });
+      return NextResponse.json({ sent: false });
     }
 
-    console.log(`[send-booking-notification] Email (${body.actionType ?? "CREATE"}) sent to ${clinicEmail} for ${patientName}`);
-    return NextResponse.json({ success: true });
+    console.log(`[send-booking-notification] Email (${actionType}) sent for booking ${bookingId} (${bookingRef})`);
+    return NextResponse.json({ sent: true });
   } catch (err) {
     console.error("[send-booking-notification] Unexpected error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ sent: false });
   }
 }

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import { rateLimit, clientIp } from "@/lib/rateLimit";
 
 if (!process.env.RESEND_API_KEY) {
   console.warn(
@@ -10,31 +12,23 @@ if (!process.env.RESEND_API_KEY) {
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ── Payload shape sent by the booking page ────────────────────────────────────
-type Lang = "es" | "en";
-
-type PatientConfirmationPayload = {
-  lang: Lang;
-  patientEmail: string;
-  patientName: string;
-  serviceName: string;      // already in the patient's language (svcCopy.name)
-  durationMinutes: number;
-  priceLabel: string;       // pre-formatted with currency, e.g. "$600 MXN"
-  startIso: string;         // the real UTC instant (selectedSlot.startIso) —
-                             // NOT the display date/time strings, which are
-                             // reconstructed from Tijuana wall-clock numbers
-                             // treated as browser-local and would shift if
-                             // re-converted through toISOString() here.
+// Only the booking gets to say who the recipient is and what the content
+// says — this route used to accept patientEmail and every display field
+// directly from the request body, which let anyone POST arbitrary
+// recipients and content through the clinic's Resend account (an open mail
+// relay, and — once katyaheras.app is verified — a fast way to wreck that
+// domain's sender reputation). Now the client supplies only enough to look
+// the booking up; everything else comes from the database.
+type RequestPayload = {
+  bookingId: string;
   bookingRef: string;
-  address: string;
-  mapsUrl: string;          // already resolved (real URL or search fallback)
-  whatToBring: string | null; // clinic_settings.instructions_pre_appointment —
-                               // single-language field (no _en column), shown
-                               // as-is regardless of lang.
-  whatsappNumber: string;
+  lang?: "es" | "en";
 };
 
-// ── Sanitise user content to prevent accidental HTML injection ────────────────
+const RECENCY_MINUTES = 15;
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -44,9 +38,7 @@ function esc(s: string): string {
     .replace(/'/g, "&#039;");
 }
 
-// Tijuana wall-clock date/time for display — the clinic's own timezone,
-// not the patient's browser or the server's.
-function formatTijuana(startIso: string, lang: Lang) {
+function formatTijuana(startIso: string, lang: "es" | "en") {
   const d = new Date(startIso);
   const dateLabel = new Intl.DateTimeFormat(lang === "es" ? "es-MX" : "en-US", {
     timeZone: "America/Tijuana",
@@ -62,6 +54,12 @@ function formatTijuana(startIso: string, lang: Lang) {
     hour12: false,
   }).format(d);
   return { dateLabel, timeLabel };
+}
+
+function formatPriceLabel(amount: number, currency: "MXN" | "USD"): string {
+  const locale = currency === "MXN" ? "es-MX" : "en-US";
+  const formatted = amount.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return `$${formatted} ${currency}`;
 }
 
 const COPY = {
@@ -117,18 +115,28 @@ function row(label: string, value: string, shaded: boolean): string {
     </tr>`;
 }
 
-function buildHtml(p: PatientConfirmationPayload): string {
+interface EmailData {
+  lang: "es" | "en";
+  patientName: string;
+  serviceName: string;
+  durationMinutes: number;
+  priceLabel: string;
+  startIso: string;
+  bookingRef: string;
+  address: string;
+  mapsUrl: string;
+  whatToBring: string | null;
+  whatsappNumber: string;
+}
+
+function buildHtml(p: EmailData): string {
   const c = COPY[p.lang];
   const { dateLabel, timeLabel } = formatTijuana(p.startIso, p.lang);
 
   const bringRow = p.whatToBring
     ? row(
         c.labelBring,
-        p.whatToBring
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => esc(line))
-          .join("<br/>"),
+        p.whatToBring.split("\n").filter(Boolean).map((line) => esc(line)).join("<br/>"),
         true
       )
     : "";
@@ -149,7 +157,6 @@ function buildHtml(p: PatientConfirmationPayload): string {
              style="background:#ffffff;border:1px solid #E2E8F0;border-radius:16px;
                     overflow:hidden;max-width:560px;width:100%;">
 
-        <!-- ─── Header ─── -->
         <tr>
           <td style="background:#C08A5E;padding:28px 36px;">
             <p style="margin:0;font-family:Arial,sans-serif;font-size:10px;
@@ -162,14 +169,12 @@ function buildHtml(p: PatientConfirmationPayload): string {
           </td>
         </tr>
 
-        <!-- ─── Intro ─── -->
         <tr>
           <td style="padding:20px 36px 0;font-family:Arial,sans-serif;font-size:13px;color:#64748B;">
             ${esc(c.intro)}
           </td>
         </tr>
 
-        <!-- ─── Details table ─── -->
         <tr>
           <td style="padding:20px 36px 8px;">
             <table width="100%" cellpadding="0" cellspacing="0"
@@ -186,7 +191,6 @@ function buildHtml(p: PatientConfirmationPayload): string {
           </td>
         </tr>
 
-        <!-- ─── Cancellation ─── -->
         <tr>
           <td style="padding:8px 36px 28px;">
             <div style="background:rgba(192,138,94,0.08);border-radius:12px;padding:16px 20px;">
@@ -201,7 +205,6 @@ function buildHtml(p: PatientConfirmationPayload): string {
           </td>
         </tr>
 
-        <!-- ─── Footer ─── -->
         <tr>
           <td style="padding:18px 36px;background:#F8FAFC;border-top:1px solid #E2E8F0;">
             <p style="margin:0;font-family:Arial,sans-serif;font-size:11px;color:#94A3B8;">
@@ -218,38 +221,118 @@ function buildHtml(p: PatientConfirmationPayload): string {
 </html>`;
 }
 
-// ── Route handler ─────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
-  try {
-    const body = (await request.json()) as PatientConfirmationPayload;
+  const ip = clientIp(request);
+  if (!rateLimit(`send-patient-confirmation:${ip}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
 
-    const { lang, patientEmail, patientName, serviceName, startIso, bookingRef } = body;
-    if (!lang || !patientEmail || !patientName || !serviceName || !startIso || !bookingRef) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  let body: RequestPayload;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const { bookingId, bookingRef } = body;
+  const lang: "es" | "en" = body.lang === "en" ? "en" : "es";
+  if (!bookingId || !bookingRef) {
+    return NextResponse.json({ error: "Missing bookingId or bookingRef" }, { status: 400 });
+  }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  // Atomic claim: only a request that flips patient_email_sent_at from null
+  // to now() proceeds to actually send. Everything else (wrong id/ref,
+  // already sent, too old, already cancelled) fails this same check, and
+  // gets the exact same response below — deliberately not distinguishing
+  // *why* it didn't send, so this can't be used to probe which
+  // (bookingId, bookingRef) pairs are valid.
+  const recencyCutoff = new Date(Date.now() - RECENCY_MINUTES * 60 * 1000).toISOString();
+  const { data: claimed, error: claimError } = await supabase
+    .from("bookings")
+    .update({ patient_email_sent_at: new Date().toISOString() })
+    .eq("id", bookingId)
+    .eq("booking_ref", bookingRef)
+    .is("patient_email_sent_at", null)
+    .neq("status", "cancelled")
+    .gt("created_at", recencyCutoff)
+    .select("patient_email, patient_name, service_id, starts_at, notes")
+    .maybeSingle();
+
+  if (claimError) {
+    console.error("[send-patient-confirmation] Claim query error:", claimError.message);
+  }
+  if (!claimed) {
+    // Not found, already sent, cancelled, or past the recency window —
+    // same response either way. Not an error: this is the expected outcome
+    // for a stale or repeated call, not just for abuse.
+    return NextResponse.json({ sent: false });
+  }
+  if (!claimed.patient_email || !claimed.starts_at) {
+    // Admin-created bookings can have no email at all (staff-only field is
+    // optional there) — nothing to send to. Already claimed above, so this
+    // can't be retried, which is correct: there was never anything to send.
+    return NextResponse.json({ sent: false });
+  }
+
+  try {
+    const [{ data: svc }, { data: settings }] = await Promise.all([
+      supabase
+        .from("services")
+        .select("title_es, title_en, duration_minutes, price")
+        .eq("id", claimed.service_id)
+        .maybeSingle(),
+      supabase
+        .from("clinic_settings")
+        .select("physical_address, maps_url, instructions_pre_appointment, whatsapp_number, currency")
+        .eq("id", 1)
+        .single(),
+    ]);
+
+    if (!svc || !settings) {
+      console.error("[send-patient-confirmation] Missing service or clinic_settings row for", bookingId);
+      return NextResponse.json({ sent: false });
     }
 
-    const c = COPY[lang];
+    const serviceName = (lang === "es" ? svc.title_es : svc.title_en) ?? svc.title_es;
+    const mapsUrl =
+      (settings.maps_url ?? "").trim() ||
+      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(settings.physical_address)}`;
 
-    // Best-effort: a failed confirmation email should never undo or block
-    // an already-successful booking. Log and return 200 either way — the
-    // caller doesn't (and shouldn't) treat this as fatal.
+    const emailData: EmailData = {
+      lang,
+      patientName: claimed.patient_name,
+      serviceName,
+      durationMinutes: svc.duration_minutes ?? 60,
+      priceLabel: formatPriceLabel(Number(svc.price ?? 0), settings.currency as "MXN" | "USD"),
+      startIso: claimed.starts_at,
+      bookingRef,
+      address: settings.physical_address,
+      mapsUrl,
+      whatToBring: settings.instructions_pre_appointment,
+      whatsappNumber: settings.whatsapp_number,
+    };
+
     const { error } = await resend.emails.send({
       from:    "Clinica Katya Heras <onboarding@resend.dev>",
-      to:      [patientEmail],
-      subject: c.subject(bookingRef),
-      html:    buildHtml(body),
+      to:      [claimed.patient_email],
+      subject: COPY[lang].subject(bookingRef),
+      html:    buildHtml(emailData),
     });
 
     if (error) {
       console.error("[send-patient-confirmation] Resend error:", JSON.stringify(error));
-      return NextResponse.json({ sent: false, error: "Failed to send email" }, { status: 200 });
+      return NextResponse.json({ sent: false });
     }
 
-    console.log(`[send-patient-confirmation] Sent to ${patientEmail} for ${bookingRef}`);
+    console.log(`[send-patient-confirmation] Sent to booking ${bookingId} (${bookingRef})`);
     return NextResponse.json({ sent: true });
   } catch (err) {
     console.error("[send-patient-confirmation] Unexpected error:", err);
-    // Same reasoning: never surface this as a hard failure to the booking flow.
-    return NextResponse.json({ sent: false, error: "Internal server error" }, { status: 200 });
+    return NextResponse.json({ sent: false });
   }
 }

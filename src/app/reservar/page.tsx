@@ -235,7 +235,6 @@ function ReservarPageContent() {
   // conversion and are only ever used for on-screen display downstream.
   const handleConfirm = async () => {
     if (!selectedSlot || !date || !time || !name.trim() || !email.trim() || !phone.trim() || !svc) return;
-    const activeSvc = svc;
 
     setLoading(true);
     setError(null);
@@ -286,61 +285,38 @@ function ReservarPageContent() {
 
     setLoading(false);
 
-    // Fire-and-forget internal notification — the booking is already
-    // confirmed in the DB. We intentionally do NOT await this: the patient
-    // sees the success screen immediately. If the email fails, it logs
-    // server-side but never surfaces an error to the patient.
-    //
-    // service is deliberately activeSvc.es.name, not lang-aware: this email
-    // goes to the clinic (Katya), whose entire template (route.ts) is
-    // hardcoded Spanish regardless of the patient's browsing language.
-    fetch("/api/send-booking-notification", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        patientName:  name.trim(),
-        patientEmail: email.trim(),
-        patientPhone: phone.trim(),
-        service:      activeSvc.es.name,
-        date:         date.toISOString().split("T")[0],
-        time,
-        bookingRef:   result.booking_ref,
-        clinicEmail:  clinicInfo.contact_email,
-        notes:        notes.trim() || undefined,
-      }),
-    }).catch((err: unknown) => {
-      // Non-critical — booking is already confirmed in the DB.
-      console.warn("[booking] Notification email failed:", err);
-    });
+    // Fire-and-forget internal + patient notifications — the booking is
+    // already confirmed in the DB. Neither is awaited: the patient sees the
+    // success screen immediately either way. Both routes look the booking
+    // up server-side by (bookingId, bookingRef) and derive every recipient
+    // and displayed field from the database themselves — the client no
+    // longer sends patientEmail/clinicEmail/content directly, since that
+    // used to let anyone POST arbitrary recipients through either route.
+    if (result.booking_id) {
+      fetch("/api/send-booking-notification", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId:  result.booking_id,
+          bookingRef: result.booking_ref,
+          actionType: "CREATE",
+        }),
+      }).catch((err: unknown) => {
+        console.warn("[booking] Clinic notification email failed:", err);
+      });
 
-    // Fire-and-forget patient confirmation — sent in whichever language they
-    // booked in (unlike the clinic notification above). Same reasoning: a
-    // failed send must never undo or block an already-successful booking,
-    // so this is never awaited and its own route always responds 200 even
-    // on failure, logging server-side instead.
-    fetch("/api/send-patient-confirmation", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        lang,
-        patientEmail:    email.trim(),
-        patientName:     name.trim(),
-        serviceName:     svcCopy?.name ?? activeSvc.es.name,
-        durationMinutes: activeSvc.duration,
-        priceLabel:      formatPrice(Number(activeSvc.price.replace(/,/g, "")), currency),
-        startIso:        selectedSlot.startIso,
-        bookingRef:      result.booking_ref,
-        address:         clinicInfo.physical_address,
-        mapsUrl:
-          clinicInfo.maps_url.trim() ||
-          `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clinicInfo.physical_address)}`,
-        whatToBring:     clinicInfo.instructions_pre_appointment,
-        whatsappNumber:  clinicInfo.whatsapp_number,
-      }),
-    }).catch((err: unknown) => {
-      // Non-critical — booking is already confirmed in the DB.
-      console.warn("[booking] Patient confirmation email failed:", err);
-    });
+      fetch("/api/send-patient-confirmation", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId:  result.booking_id,
+          bookingRef: result.booking_ref,
+          lang,
+        }),
+      }).catch((err: unknown) => {
+        console.warn("[booking] Patient confirmation email failed:", err);
+      });
+    }
 
     // Only reach here on confirmed DB success — safe to show the ref.
     setBookingId(result.booking_ref ?? "");

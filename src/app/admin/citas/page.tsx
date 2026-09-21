@@ -175,7 +175,6 @@ export default function CitasPage() {
   // ── Agenda tab ─────────────────────────────────────────────────────────
   const [slots,        setSlots]        = useState<AdminSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(true);
-  const [clinicEmail,  setClinicEmail]  = useState("");
   const [newDateTime, setNewDateTime] = useState("");
   const [adding,      setAdding]      = useState(false);
 
@@ -240,15 +239,6 @@ export default function CitasPage() {
     setPatients(data ?? []);
   }, []);
 
-  const fetchClinicEmail = useCallback(async () => {
-    const { data } = await supabase
-      .from("clinic_settings")
-      .select("contact_email")
-      .eq("id", 1)
-      .single();
-    if (data?.contact_email) setClinicEmail(data.contact_email);
-  }, []);
-
   const fetchServices = useCallback(async () => {
     const { data, error } = await supabase
       .from("services")
@@ -264,9 +254,8 @@ export default function CitasPage() {
     fetchSlots();
     fetchBookings();
     fetchPatients();
-    fetchClinicEmail();
     fetchServices();
-  }, [fetchSlots, fetchBookings, fetchPatients, fetchClinicEmail, fetchServices]);
+  }, [fetchSlots, fetchBookings, fetchPatients, fetchServices]);
 
   // ── Agenda actions ─────────────────────────────────────────────────────
   const addSlot = async () => {
@@ -315,23 +304,20 @@ export default function CitasPage() {
           status === "completed" ? "Cita marcada como completada." : "Cita cancelada.",
       });
 
-      // Fire cancellation email — non-blocking, failure is silent to the user
-      if (status === "cancelled" && booking && clinicEmail) {
-        const svc = services.find((s) => s.id === booking.service_id);
+      // Fire cancellation email — non-blocking, failure is silent to the
+      // user. The route looks the booking up server-side by (id,
+      // booking_ref) and only sends if it finds status = 'cancelled' there
+      // — passing patient/service details directly used to let the route
+      // be called with forged content for any recipient.
+      if (status === "cancelled" && booking) {
         try {
           await fetch("/api/send-booking-notification", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              actionType:   "CANCEL",
-              patientName:  booking.patient_name,
-              patientEmail: booking.patient_email,
-              patientPhone: booking.patient_phone,
-              service:      svc?.es.name ?? booking.service_id,
-              date:         booking.date,
-              time:         booking.time,
-              bookingRef:   booking.booking_ref,
-              clinicEmail,
+              bookingId:  booking.id,
+              bookingRef: booking.booking_ref,
+              actionType: "CANCEL",
             }),
           });
         } catch (emailErr) {
