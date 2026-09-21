@@ -313,6 +313,35 @@ function ReservarPageContent() {
       console.warn("[booking] Notification email failed:", err);
     });
 
+    // Fire-and-forget patient confirmation — sent in whichever language they
+    // booked in (unlike the clinic notification above). Same reasoning: a
+    // failed send must never undo or block an already-successful booking,
+    // so this is never awaited and its own route always responds 200 even
+    // on failure, logging server-side instead.
+    fetch("/api/send-patient-confirmation", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lang,
+        patientEmail:    email.trim(),
+        patientName:     name.trim(),
+        serviceName:     svcCopy?.name ?? activeSvc.es.name,
+        durationMinutes: activeSvc.duration,
+        priceLabel:      formatPrice(Number(activeSvc.price.replace(/,/g, "")), currency),
+        startIso:        selectedSlot.startIso,
+        bookingRef:      result.booking_ref,
+        address:         clinicInfo.physical_address,
+        mapsUrl:
+          clinicInfo.maps_url.trim() ||
+          `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clinicInfo.physical_address)}`,
+        whatToBring:     clinicInfo.instructions_pre_appointment,
+        whatsappNumber:  clinicInfo.whatsapp_number,
+      }),
+    }).catch((err: unknown) => {
+      // Non-critical — booking is already confirmed in the DB.
+      console.warn("[booking] Patient confirmation email failed:", err);
+    });
+
     // Only reach here on confirmed DB success — safe to show the ref.
     setBookingId(result.booking_ref ?? "");
     setStep(4);
