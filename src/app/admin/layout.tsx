@@ -51,7 +51,7 @@ export default function AdminLayout({
   // Checking session: full-screen loader
   if (checking) {
     return (
-      <div className="flex min-h-[calc(100vh-72px)] items-center justify-center bg-[var(--color-background-soft)]">
+      <div className="flex min-h-screen items-center justify-center bg-[var(--color-background-soft)]">
         <div className="flex flex-col items-center gap-4">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-bronze)] border-t-transparent" />
           <p className="text-sm text-[var(--color-text-muted)]">Verificando sesión…</p>
@@ -64,7 +64,7 @@ export default function AdminLayout({
   if (!session) return null;
 
   return (
-    <div className="min-h-[calc(100vh-72px)] bg-[var(--color-background-soft)]">
+    <div className="min-h-screen bg-[var(--color-background-soft)]">
       {/* Mobile backdrop */}
       {isSidebarOpen && (
         <div
@@ -76,7 +76,7 @@ export default function AdminLayout({
       <AdminSidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       {/* Main content */}
-      <div className="lg:pl-64 min-h-[calc(100vh-72px)] overflow-auto">
+      <div className="lg:pl-64 min-h-screen overflow-auto">
         {/* Mobile top bar */}
         <div className="flex items-center gap-3 border-b border-slate-100 bg-white px-4 py-3 lg:hidden">
           <button
