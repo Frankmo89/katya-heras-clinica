@@ -17,6 +17,7 @@ import {
   ChevronUp,
   Copy,
   Check,
+  Trash2,
 } from "lucide-react";
 
 type DaysFilter = "7" | "30" | "90" | "all";
@@ -183,6 +184,8 @@ export default function InsightsPage() {
   const [days, setDays] = useState<DaysFilter>("30");
   const [soloDown, setSoloDown] = useState(false);
   const [soloPublished, setSoloPublished] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [hiding, setHiding] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -199,12 +202,83 @@ export default function InsightsPage() {
       const json = (await res.json()) as InsightsPayload;
       if (!res.ok) throw new Error(json.error || `Error ${res.status}`);
       setData(json);
+      setSelected(new Set());
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
       setLoading(false);
     }
   }, [days, soloDown, soloPublished]);
+
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllMarketing() {
+    if (!data?.marketing.length) return;
+    setSelected((prev) => {
+      const ids = data.marketing.map((r) => r.id);
+      const allOn = ids.every((id) => prev.has(id));
+      if (allOn) return new Set();
+      return new Set(ids);
+    });
+  }
+
+  async function hideEvents(ids: string[]) {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (!unique.length || hiding) return;
+    const ok = window.confirm(
+      unique.length === 1
+        ? "¿Eliminar este contenido?"
+        : `¿Eliminar ${unique.length} contenidos?`,
+    );
+    if (!ok) return;
+    setHiding(true);
+    try {
+      const res = await fetch("/api/ai/publicidad/hide", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await authHeaders()),
+        },
+        body: JSON.stringify({ eventIds: unique }),
+      });
+      const json = (await res.json()) as { error?: string; updated?: number };
+      if (!res.ok) throw new Error(json.error || `Error ${res.status}`);
+      // Optimistic remove + refresh counts
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              marketing: prev.marketing.filter((r) => !unique.includes(r.id)),
+              counts: {
+                ...prev.counts,
+                marketingRows: Math.max(
+                  0,
+                  prev.counts.marketingRows - (json.updated ?? unique.length),
+                ),
+              },
+            }
+          : prev,
+      );
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of unique) next.delete(id);
+        return next;
+      });
+      void load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "No se pudo ocultar");
+    } finally {
+      setHiding(false);
+    }
+  }
 
   useEffect(() => {
     // Staff insights fetch on mount / filter change (async; not cascading render).
@@ -375,7 +449,7 @@ export default function InsightsPage() {
 
           <div className="grid gap-5 lg:grid-cols-2">
             <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
-              <div className="mb-3 flex items-center gap-2">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
                 <Megaphone size={14} className="text-[var(--color-bronze)]" />
                 <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-bronze)]">
                   Marketing ({data.marketing.length}
@@ -384,6 +458,35 @@ export default function InsightsPage() {
                     : ""}
                   )
                 </h2>
+                {data.marketing.length > 0 && (
+                  <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[11px] text-slate-500">
+                    <input
+                      type="checkbox"
+                      checked={
+                        data.marketing.length > 0 &&
+                        data.marketing.every((r) => selected.has(r.id))
+                      }
+                      onChange={() => toggleSelectAllMarketing()}
+                      className="rounded border-slate-300 text-[var(--color-bronze)] focus:ring-[var(--color-bronze)]"
+                    />
+                    Todos
+                  </label>
+                )}
+                {selected.size > 0 && (
+                  <button
+                    type="button"
+                    disabled={hiding}
+                    onClick={() => void hideEvents([...selected])}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    {hiding ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={12} />
+                    )}
+                    Ocultar seleccionados
+                  </button>
+                )}
               </div>
               <ul className="space-y-3">
                 {data.marketing.length === 0 && (
@@ -398,12 +501,24 @@ export default function InsightsPage() {
                       : row.channel
                         ? [row.channel]
                         : [];
+                  const isSel = selected.has(row.id);
                   return (
                     <li
                       key={row.id}
-                      className="rounded-xl border border-slate-50 bg-slate-50/60 px-3 py-2.5"
+                      className={`rounded-xl border px-3 py-2.5 ${
+                        isSel
+                          ? "border-[rgba(192,138,94,0.35)] bg-[rgba(192,138,94,0.06)]"
+                          : "border-slate-50 bg-slate-50/60"
+                      }`}
                     >
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                        <input
+                          type="checkbox"
+                          checked={isSel}
+                          onChange={() => toggleSelected(row.id)}
+                          className="rounded border-slate-300 text-[var(--color-bronze)] focus:ring-[var(--color-bronze)]"
+                          aria-label="Seleccionar evento"
+                        />
                         <span>{fmtDate(row.created_at)}</span>
                         <span className="rounded-full bg-white px-2 py-0.5">
                           {row.event_type}
@@ -424,6 +539,16 @@ export default function InsightsPage() {
                         {row.rating === 1 && <span>👍</span>}
                         {row.rating === -1 && <span>👎</span>}
                         <EventIdChip id={row.id} />
+                        <button
+                          type="button"
+                          title="Ocultar"
+                          disabled={hiding}
+                          onClick={() => void hideEvents([row.id])}
+                          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-500 hover:border-red-200 hover:text-red-600 disabled:opacity-50"
+                        >
+                          <Trash2 size={12} />
+                          Ocultar
+                        </button>
                       </div>
                       <p className="mt-1 text-sm font-medium text-slate-800">
                         {row.topic || "—"}

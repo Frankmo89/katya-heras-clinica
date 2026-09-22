@@ -79,6 +79,7 @@ function channelsFromMeta(meta: unknown): string[] {
  * GET /api/ai/insights
  * Staff-only summary of recent marketing + clinical ML events.
  * Query: days=7|30|90|all (default 30), rating=all|up|down, published=all|yes|no
+ * Optional: includeHidden=1 to include soft-deleted marketing rows (hidden_at set).
  */
 export async function GET(request: Request) {
   try {
@@ -98,15 +99,23 @@ export async function GET(request: Request) {
     const days = parseDays(url.searchParams.get("days"));
     const rating = parseRating(url.searchParams.get("rating"));
     const published = parsePublished(url.searchParams.get("published"));
+    const includeHidden =
+      url.searchParams.get("includeHidden") === "1" ||
+      url.searchParams.get("includeHidden") === "true";
     const since = sinceIso(days);
+
+    const mktSelect =
+      "id, created_at, event_type, topic, prompt_version, model, rating, rating_note, downvoted_sources, output_published, output_draft, outcome_leads, outcome_bookings, meta";
 
     let mktQ = supabase
       .from("ai_marketing_events")
-      .select(
-        "id, created_at, event_type, topic, prompt_version, model, rating, rating_note, downvoted_sources, output_published, output_draft, outcome_leads, outcome_bookings, meta",
-      )
+      .select(mktSelect)
       .order("created_at", { ascending: false })
       .limit(200);
+
+    if (!includeHidden) {
+      mktQ = mktQ.is("hidden_at", null);
+    }
 
     let clinQ = supabase
       .from("ai_clinical_events")
@@ -121,7 +130,26 @@ export async function GET(request: Request) {
       clinQ = clinQ.gte("created_at", since);
     }
 
-    const [mktRes, clinRes] = await Promise.all([mktQ, clinQ]);
+    const [mktRes0, clinRes] = await Promise.all([mktQ, clinQ]);
+    let mktRes = mktRes0;
+
+    // Column may not exist until migration 0039 is applied — fall back once.
+    if (
+      mktRes.error &&
+      /hidden_at/i.test(mktRes.error.message) &&
+      !includeHidden
+    ) {
+      console.warn(
+        "insights marketing: hidden_at missing — apply migration 0039; loading without filter",
+      );
+      let mktRetry = supabase
+        .from("ai_marketing_events")
+        .select(mktSelect)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (since) mktRetry = mktRetry.gte("created_at", since);
+      mktRes = await mktRetry;
+    }
 
     if (mktRes.error) console.warn("insights marketing", mktRes.error.message);
     if (clinRes.error) console.warn("insights clinical", clinRes.error.message);
@@ -224,7 +252,7 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({
-      filters: { days, rating, published },
+      filters: { days, rating, published, includeHidden },
       counts: {
         thumbsUp,
         thumbsDown,

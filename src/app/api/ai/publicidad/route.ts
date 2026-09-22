@@ -4,8 +4,10 @@ import {
   groqChatWithFallback,
   logMarketingEvent,
 } from "@/lib/ai-learning";
+import { toneForPreset } from "@/lib/publicidadTone";
 import { createClient } from "@supabase/supabase-js";
 import { requireStaffSession } from "@/lib/requireStaffSession";
+import { instagramHandleFromUrl } from "@/lib/clinicSettings";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -69,10 +71,25 @@ async function osteoBearer(base: string): Promise<string | null> {
 }
 
 
-async function clinicContactLine(): Promise<string> {
+type ClinicContact = {
+  line: string;
+  whatsapp: string | null;
+  email: string | null;
+  igHandle: string | null;
+  hasContact: boolean;
+};
+
+async function clinicContact(): Promise<ClinicContact> {
+  const empty: ClinicContact = {
+    line: "",
+    whatsapp: null,
+    email: null,
+    igHandle: null,
+    hasContact: false,
+  };
   const url = env("NEXT_PUBLIC_SUPABASE_URL");
   const key = env("SUPABASE_SERVICE_ROLE_KEY");
-  if (!url || !key) return "";
+  if (!url || !key) return empty;
   try {
     const supabase = createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -82,15 +99,27 @@ async function clinicContactLine(): Promise<string> {
       .select("whatsapp_number, contact_email, instagram_url, facebook_url")
       .eq("id", 1)
       .maybeSingle();
-    if (!data) return "";
+    if (!data) return empty;
+    const whatsapp = String(data.whatsapp_number || "").trim() || null;
+    const email = String(data.contact_email || "").trim() || null;
+    const igUrl = String(data.instagram_url || "").trim() || null;
+    const igHandle = instagramHandleFromUrl(igUrl);
+    const facebook = String(data.facebook_url || "").trim() || null;
     const parts: string[] = [];
-    if (data.whatsapp_number) parts.push(`WhatsApp: ${data.whatsapp_number}`);
-    if (data.contact_email) parts.push(`Email: ${data.contact_email}`);
-    if (data.instagram_url) parts.push(`Instagram: ${data.instagram_url}`);
-    if (data.facebook_url) parts.push(`Facebook: ${data.facebook_url}`);
-    return parts.join(" · ");
+    if (whatsapp) parts.push(`WhatsApp: ${whatsapp}`);
+    if (email) parts.push(`Email: ${email}`);
+    if (igHandle) parts.push(`Instagram: ${igHandle}`);
+    else if (igUrl) parts.push(`Instagram: ${igUrl}`);
+    if (facebook) parts.push(`Facebook: ${facebook}`);
+    return {
+      line: parts.join(" · "),
+      whatsapp,
+      email,
+      igHandle,
+      hasContact: Boolean(whatsapp || email || igHandle || igUrl),
+    };
   } catch {
-    return "";
+    return empty;
   }
 }
 
@@ -140,7 +169,12 @@ export async function POST(request: Request) {
     const body = await request.json();
     const topic = String(body.topic || "").trim();
     const folderFilter = (body.folderFilter || "all") as FolderFilter;
-    const tone = String(body.tone || "cálido, profesional, cercano").trim();
+    const tonePresetId = String(body.tone_preset || body.tonePreset || "").trim();
+    const preset = toneForPreset(tonePresetId);
+    const tone = String(
+      body.tone || preset?.tone || "cálido, cercano, humano; sin exagerar promesas",
+    ).trim();
+    const resolvedPresetId = preset?.id ?? (tonePresetId || null);
 
     if (!topic || topic.length < 3) {
       return NextResponse.json(
@@ -175,14 +209,40 @@ export async function POST(request: Request) {
     }
 
     const corpus = await askCorpus(base, token, topic, folderFilter);
-    const contactLine = await clinicContactLine();
+    const contact = await clinicContact();
+
+    const ctaRules = contact.hasContact
+      ? [
+          "Reglas de CTA (obligatorias):",
+          contact.whatsapp
+            ? `- Prefiere WhatsApp (${contact.whatsapp}) en los CTAs cuando haga falta un canal de contacto.`
+            : "- No hay WhatsApp en configuración; no inventes uno.",
+          !contact.whatsapp && contact.email
+            ? `- Si no hay WhatsApp, usa el email (${contact.email}).`
+            : "",
+          !contact.whatsapp && !contact.email && contact.igHandle
+            ? `- Si no hay WhatsApp ni email, usa Instagram ${contact.igHandle}.`
+            : "",
+          contact.igHandle
+            ? `- En piezas de Instagram puedes mencionar ${contact.igHandle} (handle real).`
+            : "- No hay handle de Instagram configurado; no inventes @handles.",
+          "NUNCA inventes teléfonos, WhatsApp, emails ni handles (nada tipo 555-123-4567, +52 inventado, @fakes).",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : [
+          "Reglas de CTA (obligatorias):",
+          "- No hay contacto en Configuración: CTA suave sin inventar números.",
+          '- Usa frases como "Agenda en la clínica", "Reserva en la web" o "Escríbenos por DM".',
+          "- NUNCA inventes teléfonos, WhatsApp, emails ni handles (nada tipo 555-123-4567, +52 inventado, @fakes).",
+        ].join("\n");
 
     const systemPrompt = `
 Eres la estratega de marketing de la clínica Katya Heras (masaje tailandés, osteopatía holística, kinesiotape / VNM).
 Trabajas SOLO con el material de estudio aportado. No inventes estudios ni cifras. No diagnostiques ni prometas curas.
 Tono: ${tone}. Español de México/latam. Público: potenciales pacientes y comunidad wellness.
-Contacto real de la clínica (úsalo SOLO en CTAs si hace falta): ${contactLine || "ninguno configurado — no pongas teléfono ni email"}.
-NUNCA inventes números de teléfono, WhatsApp, emails ni handles (nada tipo 555-123-4567, +52 inventado, @fakes). Si no hay contacto real, el CTA debe ser genérico ("Agenda en la web", "Escríbenos por DM") sin inventar datos.
+Contacto real de la clínica (úsalo SOLO en CTAs si hace falta): ${contact.line || "ninguno configurado — no pongas teléfono ni email"}.
+${ctaRules}
 
 Devuelve JSON estricto con:
 - "estrategia": { "objetivo": string, "angulo": string, "publico": string, "calendario_sugerido": string[] (3–5 ideas de posts en la semana) }
@@ -255,6 +315,9 @@ Citas disponibles (títulos): ${JSON.stringify(
         has_estrategia: Boolean(pack.estrategia),
         has_ig: Boolean(pack.instagram_post),
         tone,
+        tone_preset: resolvedPresetId,
+        has_clinic_contact: contact.hasContact,
+        ig_handle: contact.igHandle,
       },
     });
 
@@ -266,6 +329,8 @@ Citas disponibles (títulos): ${JSON.stringify(
       eventId,
       model,
       prompt_version: PUBLICIDAD_PROMPT_VERSION,
+      tone,
+      tone_preset: resolvedPresetId,
       ...pack,
     });
   } catch (err) {
