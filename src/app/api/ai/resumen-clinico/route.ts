@@ -1,20 +1,20 @@
-// src/app/api/ai/resumen-clinico/route.ts
-import { NextResponse } from 'next/server';
-import Groq from 'groq-sdk';
-import { createClient } from '@supabase/supabase-js';
-import { logLearningEvent } from '@/lib/ai-learning';
-import { requireStaffSession } from '@/lib/requireStaffSession';
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import {
+  RESUMEN_PROMPT_VERSION,
+  groqChatWithFallback,
+  logClinicalAudit,
+  logClinicalEvent,
+} from "@/lib/ai-learning";
+import { requireStaffSession } from "@/lib/requireStaffSession";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+export const runtime = "nodejs";
 
-const supabaseUrl        = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 // Service-role client — reads clinical notes across all patients, bypassing
-// RLS. Only reachable after requireStaffSession() below passes. Without
-// that check, this route read and returned a patient's clinical notes (via
-// Groq) to anyone who supplied that patient's email, with no session
-// required at all.
+// RLS. Only reachable after requireStaffSession() below passes.
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function POST(request: Request) {
@@ -23,35 +23,56 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { patientEmail, patientName } = await request.json();
+    const body = await request.json();
+    const patientEmail = body.patientEmail
+      ? String(body.patientEmail).trim()
+      : "";
+    const patientName = body.patientName
+      ? String(body.patientName).trim()
+      : "";
+    const patientId = body.patientId ? String(body.patientId) : null;
 
     if (!patientEmail) {
-      return NextResponse.json({ error: "Falta el email del paciente." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Falta el email del paciente." },
+        { status: 400 },
+      );
+    }
+
+    const groqKey = String(process.env.GROQ_API_KEY ?? "").trim();
+    if (!groqKey) {
+      return NextResponse.json(
+        { error: "Falta GROQ_API_KEY en el servidor." },
+        { status: 503 },
+      );
     }
 
     // 1. Obtener el historial de citas (notas y servicios) del paciente
     const { data: citas, error } = await supabase
-      .from('bookings')
-      .select('date, service_id, notes, status')
-      .eq('patient_email', patientEmail)
-      .eq('status', 'completed')
-      .order('date', { ascending: true });
+      .from("bookings")
+      .select("date, service_id, notes, status")
+      .eq("patient_email", patientEmail)
+      .eq("status", "completed")
+      .order("date", { ascending: true });
 
     if (error || !citas || citas.length === 0) {
-      return NextResponse.json({ 
-        resumen: "No hay suficiente historial clínico completado para generar un análisis." 
+      return NextResponse.json({
+        resumen:
+          "No hay suficiente historial clínico completado para generar un análisis.",
       });
     }
 
-    // 2. Formatear el historial para el LLM
-    const historialTexto = citas.map((cita) => 
-      `- Fecha: ${cita.date}\n  Servicio: ${cita.service_id}\n  Notas clínicas: ${cita.notes || "Sin notas adicionales."}`
-    ).join('\n\n');
+    // 2. Formatear el historial para el LLM (no log PHI into ML tables)
+    const historialTexto = citas
+      .map(
+        (cita) =>
+          `- Fecha: ${cita.date}\n  Servicio: ${cita.service_id}\n  Notas clínicas: ${cita.notes || "Sin notas adicionales."}`,
+      )
+      .join("\n\n");
 
-    // 3. Prompt del Sistema
     const systemPrompt = `
       Eres un asistente médico experto en osteopatía, trabajando para la clínica de Katya Heras.
-      Analiza el siguiente historial clínico de citas y notas del paciente ${patientName}.
+      Analiza el siguiente historial clínico de citas y notas del paciente.
       
       Devuelve un análisis en formato JSON estricto con las siguientes claves:
       - "resumen": Un párrafo sintético (máximo 3 oraciones) sobre la evolución del paciente.
@@ -61,36 +82,73 @@ export async function POST(request: Request) {
       Responde SOLO con el objeto JSON válido. No incluyas texto antes o después.
     `;
 
-    // 4. Llamada a Groq (Usando llama3-8b-8192 o mixtral, ajusta según prefieras)
-    const chatCompletion = await groq.chat.completions.create({
+    const { raw, model } = await groqChatWithFallback({
+      apiKey: groqKey,
+      temperature: 0.3,
+      json: true,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `Historial de ${patientName}:\n${historialTexto}` }
+        {
+          role: "user",
+          content: `Historial${patientName ? ` de ${patientName}` : ""}:\n${historialTexto}`,
+        },
       ],
-      model: "llama3-8b-8192",
-      temperature: 0.3, // Temperatura baja para respuestas clínicas precisas
-      response_format: { type: "json_object" } // Fuerza la salida JSON
     });
 
-    const aiResponse = chatCompletion.choices[0]?.message?.content || "{}";
-    const result = JSON.parse(aiResponse);
+    let result: Record<string, unknown>;
+    try {
+      result = JSON.parse(raw || "{}");
+    } catch {
+      return NextResponse.json(
+        { error: "La IA no devolvió JSON válido." },
+        { status: 502 },
+      );
+    }
 
-    const eventId = await logLearningEvent({
-      source: 'resumen_clinico',
-      event_type: 'conclusion',
-      topic_or_question: `Resumen clínico: ${patientName || patientEmail}`,
-      output_preview: typeof result.resumen === 'string' ? result.resumen : JSON.stringify(result).slice(0, 800),
+    const outputDraft =
+      typeof result.resumen === "string"
+        ? result.resumen
+        : JSON.stringify(result).slice(0, 800);
+
+    const eventId = await logClinicalEvent({
+      source: "resumen_clinico",
+      event_type: "conclusion",
+      topic_or_question: "Resumen clínico",
+      prompt_version: RESUMEN_PROMPT_VERSION,
+      model,
+      output_draft: outputDraft,
       meta: {
-        patientEmailHash: patientEmail ? patientEmail.length : 0,
-        observaciones: Array.isArray(result.observaciones) ? result.observaciones.length : 0,
-        recomendaciones: Array.isArray(result.recomendaciones) ? result.recomendaciones.length : 0,
+        citas_count: citas.length,
+        observaciones: Array.isArray(result.observaciones)
+          ? result.observaciones.length
+          : 0,
+        recomendaciones: Array.isArray(result.recomendaciones)
+          ? result.recomendaciones.length
+          : 0,
       },
     });
 
-    return NextResponse.json({ ...result, eventId });
+    if (patientId && eventId) {
+      await logClinicalAudit({
+        patient_id: patientId,
+        clinical_event_id: eventId,
+        source: "resumen_clinico",
+        note: "resumen generado",
+        meta: { citas_count: citas.length },
+      });
+    }
 
+    return NextResponse.json({
+      ...result,
+      eventId,
+      model,
+      prompt_version: RESUMEN_PROMPT_VERSION,
+    });
   } catch (error) {
     console.error("Error en la API de Groq:", error);
-    return NextResponse.json({ error: "Error al generar el análisis clínico." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Error al generar el análisis clínico." },
+      { status: 500 },
+    );
   }
 }

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { logLearningEvent } from "@/lib/ai-learning";
+import {
+  OSTEORAG_PROMPT_VERSION,
+  logClinicalAudit,
+  logClinicalEvent,
+} from "@/lib/ai-learning";
 import { requireStaffSession } from "@/lib/requireStaffSession";
 
 export const runtime = "nodejs";
@@ -21,26 +25,21 @@ function env(name: string): string {
   return String(process.env[name] ?? "").trim();
 }
 
-function envDiag() {
-  const keys = Object.keys(process.env);
-  return {
+/** Server-side only — never include in client JSON responses. */
+function logEnvPresence() {
+  console.warn("osteorag env presence", {
     OSTEORAG_EMAIL: Boolean(env("OSTEORAG_EMAIL")),
     OSTEORAG_PASSWORD: Boolean(env("OSTEORAG_PASSWORD")),
     OSTEORAG_BEARER_TOKEN: Boolean(env("OSTEORAG_BEARER_TOKEN")),
     OSTEORAG_BASIC_USER: Boolean(env("OSTEORAG_BASIC_USER")),
     OSTEORAG_BASIC_PASS: Boolean(env("OSTEORAG_BASIC_PASS")),
     OSTEORAG_BASE_URL: Boolean(env("OSTEORAG_BASE_URL")),
-    NEXT_PUBLIC_SUPABASE_URL: Boolean(env("NEXT_PUBLIC_SUPABASE_URL")),
-    SUPABASE_SERVICE_ROLE_KEY: Boolean(env("SUPABASE_SERVICE_ROLE_KEY")),
-    GROQ_API_KEY: Boolean(env("GROQ_API_KEY")),
-    envKeyCount: keys.length,
-    osteoKeyNames: keys.filter((k) => /osteo/i.test(k)),
-  };
+  });
 }
 
 async function getOsteoBearer(base: string): Promise<
   | { ok: true; token: string }
-  | { ok: false; error: string; status: number; present: ReturnType<typeof envDiag> }
+  | { ok: false; error: string; status: number }
 > {
   const email = env("OSTEORAG_EMAIL");
   const password = env("OSTEORAG_PASSWORD");
@@ -64,11 +63,11 @@ async function getOsteoBearer(base: string): Promise<
       cache: "no-store",
     });
     if (!cfgRes.ok) {
+      logEnvPresence();
       return {
         ok: false,
         error: `No pude leer /api/config de OsteoRAG (${cfgRes.status}).`,
         status: 502,
-        present: envDiag(),
       };
     }
     const cfg = (await cfgRes.json()) as {
@@ -78,11 +77,11 @@ async function getOsteoBearer(base: string): Promise<
     const supabaseUrl = (cfg.supabaseUrl || "").replace(/\/$/, "");
     const anon = cfg.supabaseAnonKey || "";
     if (!supabaseUrl || !anon) {
+      logEnvPresence();
       return {
         ok: false,
         error: "OsteoRAG /api/config no devolvió supabaseUrl/anon key.",
         status: 502,
-        present: envDiag(),
       };
     }
 
@@ -107,6 +106,7 @@ async function getOsteoBearer(base: string): Promise<
       error?: string;
     };
     if (!authRes.ok || !authJson.access_token) {
+      logEnvPresence();
       return {
         ok: false,
         error:
@@ -115,7 +115,6 @@ async function getOsteoBearer(base: string): Promise<
           authJson.error ||
           "Login OsteoRAG falló (email/password).",
         status: 401,
-        present: envDiag(),
       };
     }
 
@@ -135,12 +134,12 @@ async function getOsteoBearer(base: string): Promise<
     };
   }
 
+  logEnvPresence();
   return {
     ok: false,
     error:
       "OsteoRAG no está configurado. En Vercel pon OSTEORAG_EMAIL + OSTEORAG_PASSWORD (login de OsteoRAG).",
     status: 503,
-    present: envDiag(),
   };
 }
 
@@ -152,9 +151,9 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const question = String(body.question || "").trim();
-    const patientName = String(body.patientName || "").trim();
     const patientContext = String(body.patientContext || "").trim();
     const folderFilter = (body.folderFilter || "all") as FolderFilter;
+    const patientId = body.patientId ? String(body.patientId) : null;
 
     if (!question) {
       return NextResponse.json({ error: "Escribe una pregunta." }, { status: 400 });
@@ -169,11 +168,11 @@ export async function POST(request: Request) {
 
     const auth = await getOsteoBearer(base);
     if (!auth.ok) {
+      // Security: never return env key presence (`present`) to the client.
       return NextResponse.json(
         {
           error: auth.error,
           code: "OSTEORAG_AUTH",
-          present: auth.present,
         },
         { status: auth.status },
       );
@@ -190,8 +189,7 @@ export async function POST(request: Request) {
     }
 
     // Only clinical context goes to the external corpus service — never the
-    // patient's name (or, if ever added, email/phone). patientName is used
-    // below only for the internal learning-event log, not this message.
+    // patient's name (or email/phone).
     const message = [
       "Eres un asistente de estudio osteopático con corpus citado.",
       "NO diagnostiques ni prescribas. Responde solo con evidencia del corpus.",
@@ -229,23 +227,40 @@ export async function POST(request: Request) {
     }
 
     const citationTitles = (json.citations || [])
-      .map((c) => (c && typeof c === "object" && "title" in c ? String((c as { title?: string }).title || "") : ""))
+      .map((c) =>
+        c && typeof c === "object" && "title" in c
+          ? String((c as { title?: string }).title || "")
+          : "",
+      )
       .filter(Boolean);
-    const eventId = await logLearningEvent({
+
+    const eventId = await logClinicalEvent({
       source: "osteorag",
       event_type: "query",
       topic_or_question: question,
       folder_filter: folderFilter,
-      patient_id: body.patientId ? String(body.patientId) : null,
-      output_preview: json.answer || "",
+      prompt_version: OSTEORAG_PROMPT_VERSION,
+      model: "osteorag-worker",
+      output_draft: json.answer || "",
       citation_titles: citationTitles,
-      meta: { patientName: patientName || null },
+      meta: { has_patient_context: Boolean(patientContext) },
     });
+
+    if (patientId && eventId) {
+      await logClinicalAudit({
+        patient_id: patientId,
+        clinical_event_id: eventId,
+        source: "osteorag",
+        note: "consulta corpus",
+        meta: { folder_filter: folderFilter },
+      });
+    }
 
     return NextResponse.json({
       answer: json.answer || "",
       citations: json.citations || [],
       eventId,
+      prompt_version: OSTEORAG_PROMPT_VERSION,
       disclaimer:
         "Asistente de estudio con citas del corpus. No es diagnóstico ni sustituye el criterio clínico.",
     });

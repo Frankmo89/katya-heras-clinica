@@ -2,7 +2,7 @@
 
 Documento vivo para llevar el trabajo **en orden**. Actualizar al cerrar cada fase.
 
-Última actualización: 2026-09-17 (PT)
+Última actualización: 2026-09-22 (PT)
 
 ## Norte
 
@@ -21,19 +21,21 @@ Asistente profesional para osteopatía / masaje / kinesiotape:
 | Env Vercel proyecto (no Shared) | `OSTEORAG_BASE_URL`, `OSTEORAG_EMAIL`, `OSTEORAG_PASSWORD` |
 | Módulo Publicidad | `/admin/publicidad` + `POST /api/ai/publicidad` |
 | Eval corpus (14/14 PASS vía Worker) | notas 2026-09-17 |
-| Migración tablas Opus (Supabase clínica) | `ai_marketing_events`, `ai_clinical_events` (sin `patient_id`), `ai_clinical_audit` |
+| Migración tablas Opus (Supabase clínica) | `ai_marketing_events`, `ai_clinical_events` (sin `patient_id`), `ai_clinical_audit` — ver `supabase/migrations/0038_split_ai_learning_tables_opus.sql` (idempotente; ya aplicada en live) |
 | `ai_learning_events` | **DEPRECATED** — no escribir filas nuevas |
+| Split escritura ML (P0) | `src/lib/ai-learning.ts` → marketing / clinical / audit |
+| `prompt_version` + `model` + draft/published | Publicidad + OsteoRAG + resumen clínico |
+| Publicidad copy → publish; outcome leads/citas | `POST /api/ai/publicidad/publish`, `.../outcome` + UI |
+| 👎 → `downvoted_sources` | feedback + Publicidad + OsteoRagConsult |
+| Quitar `present` del API OsteoRAG | solo `console.warn` server-side |
+| Fallback modelos Groq | `GROQ_MODEL_FALLBACK` en `ai-learning.ts` |
+| Página Insights admin | `/admin/insights` + `GET /api/ai/insights` + nav |
+| Eval 5 temas Publicidad | `docs/evals/publicidad-5-topics.md` + `scripts/eval-publicidad-diversity.mjs` |
 
-## En curso (P0 — refactor loop Opus)
+## En curso (P0 — remates)
 
-1. Partir escritura: marketing vs clinical vs audit
-2. Campos: `prompt_version`, `model`, `output_draft`, `output_published`
-3. Publicidad: copiar → `publish`; semana → `outcome` (leads/citas)
-4. 👎 → `downvoted_sources` (priorizar sobre reforzar 👍)
-5. Quitar diagnóstico `present` del API OsteoRAG
-6. Fallback modelos Groq en Publicidad
-7. Página Insights en admin
-8. Eval 5 temas distintos en Publicidad
+- Correr eval 5 temas en prod con `GROQ_API_KEY` + OsteoRAG (checklist listo; secrets no están en el box de CI)
+- Observar Insights con datos reales post-deploy
 
 ## Siguiente (P1)
 
@@ -63,5 +65,6 @@ Asistente profesional para osteopatía / masaje / kinesiotape:
 ## Enlaces
 
 - Repo: https://github.com/Frankmo89/katya-heras-clinica
-- Prod: https://katya-heras-clinica.vercel.app
+- Prod: https://katyaheras.app
+- Prod (Vercel alias): https://katya-heras-clinica.vercel.app
 - OsteoRAG: https://osteorag.alonsosky617.workers.dev

@@ -39,6 +39,8 @@ interface Pack {
   disclaimer?: string;
   citations?: { title?: string; source_folder?: string }[];
   eventId?: string;
+  model?: string;
+  prompt_version?: string;
   error?: string;
 }
 
@@ -54,10 +56,38 @@ const SUGGESTIONS = [
   "Masaje tailandés para espalda",
   "Kinesiotape / VNM lumbar",
   "Cuidados de cuello y cervicales",
-  "Beneficios del masaje holístico",
+  "Fascia / liberación miofascial",
 ];
 
-function CopyBtn({ text }: { text: string }) {
+async function markPublished(
+  eventId: string | undefined,
+  text: string,
+  channel: string,
+) {
+  if (!eventId || !text.trim()) return;
+  try {
+    await fetch("/api/ai/publicidad/publish", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(await authHeaders()),
+      },
+      body: JSON.stringify({ eventId, text, channel }),
+    });
+  } catch {
+    // fire-and-forget for UX; server already soft-fails
+  }
+}
+
+function CopyBtn({
+  text,
+  eventId,
+  channel,
+}: {
+  text: string;
+  eventId?: string;
+  channel: string;
+}) {
   const [ok, setOk] = useState(false);
   return (
     <button
@@ -65,6 +95,7 @@ function CopyBtn({ text }: { text: string }) {
       onClick={async () => {
         await navigator.clipboard.writeText(text);
         setOk(true);
+        void markPublished(eventId, text, channel);
         setTimeout(() => setOk(false), 1500);
       }}
       className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] text-slate-500 hover:border-[var(--color-bronze)] hover:text-[var(--color-bronze)]"
@@ -79,10 +110,14 @@ function Card({
   title,
   children,
   copyText,
+  eventId,
+  channel,
 }: {
   title: string;
   children: React.ReactNode;
   copyText?: string;
+  eventId?: string;
+  channel?: string;
 }) {
   return (
     <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
@@ -90,9 +125,108 @@ function Card({
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-bronze)]">
           {title}
         </h3>
-        {copyText ? <CopyBtn text={copyText} /> : null}
+        {copyText ? (
+          <CopyBtn
+            text={copyText}
+            eventId={eventId}
+            channel={channel || "copy"}
+          />
+        ) : null}
       </div>
       {children}
+    </div>
+  );
+}
+
+function OutcomeForm({ eventId }: { eventId: string }) {
+  const [leads, setLeads] = useState("");
+  const [bookings, setBookings] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setErr(null);
+    setSaved(false);
+    try {
+      const res = await fetch("/api/ai/publicidad/outcome", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await authHeaders()),
+        },
+        body: JSON.stringify({
+          eventId,
+          leads: leads === "" ? null : Number(leads),
+          bookings: bookings === "" ? null : Number(bookings),
+          notes: notes || null,
+        }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || `Error ${res.status}`);
+      setSaved(true);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Error al guardar");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-5">
+      <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-bronze)]">
+        Resultado de la campaña (opcional)
+      </h3>
+      <p className="mt-1 text-[12px] text-slate-500">
+        Tras publicar, anota leads / citas para el loop de aprendizaje.
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <label className="text-[12px] text-slate-600">
+          Leads
+          <input
+            type="number"
+            min={0}
+            value={leads}
+            onChange={(e) => setLeads(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-bronze)]"
+          />
+        </label>
+        <label className="text-[12px] text-slate-600">
+          Citas
+          <input
+            type="number"
+            min={0}
+            value={bookings}
+            onChange={(e) => setBookings(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-bronze)]"
+          />
+        </label>
+        <label className="text-[12px] text-slate-600 sm:col-span-1">
+          Notas
+          <input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Ej. IG stories funcionó"
+            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-bronze)]"
+          />
+        </label>
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={saving}
+          className="rounded-lg bg-[var(--color-bronze)] px-4 py-2 text-[12px] font-medium text-white hover:bg-[var(--color-bronze-hover)] disabled:opacity-50"
+        >
+          {saving ? "Guardando…" : "Guardar resultado"}
+        </button>
+        {saved && (
+          <span className="text-[12px] text-emerald-700">Guardado ✓</span>
+        )}
+        {err && <span className="text-[12px] text-red-600">{err}</span>}
+      </div>
     </div>
   );
 }
@@ -132,6 +266,9 @@ export default function PublicidadPage() {
   const igCaption = pack?.instagram_post
     ? `${pack.instagram_post.caption || ""}\n\n${(pack.instagram_post.hashtags || []).join(" ")}`
     : "";
+
+  const citationTitles =
+    pack?.citations?.map((c) => c.title || "").filter(Boolean) || [];
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 p-8">
@@ -214,9 +351,15 @@ export default function PublicidadPage() {
 
       {pack && (
         <div className="space-y-5">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
             <Megaphone size={16} className="text-[var(--color-bronze)]" />
             Tema: <span className="font-medium text-slate-800">{pack.topic}</span>
+            {pack.model && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
+                {pack.model}
+                {pack.prompt_version ? ` · ${pack.prompt_version}` : ""}
+              </span>
+            )}
           </div>
 
           {pack.estrategia && (
@@ -253,7 +396,12 @@ export default function PublicidadPage() {
 
           <div className="grid gap-5 md:grid-cols-2">
             {pack.articulo_corto && (
-              <Card title="Artículo / newsletter" copyText={pack.articulo_corto}>
+              <Card
+                title="Artículo / newsletter"
+                copyText={pack.articulo_corto}
+                eventId={pack.eventId}
+                channel="articulo"
+              >
                 <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-slate-700">
                   {pack.articulo_corto}
                 </p>
@@ -291,6 +439,8 @@ export default function PublicidadPage() {
             {pack.instagram_historia && (
               <Card
                 title="Historia Instagram"
+                eventId={pack.eventId}
+                channel="ig_story"
                 copyText={[
                   pack.instagram_historia.texto_pantalla,
                   pack.instagram_historia.texto_apoyo,
@@ -311,7 +461,12 @@ export default function PublicidadPage() {
               </Card>
             )}
             {pack.instagram_post && (
-              <Card title="Post Instagram" copyText={igCaption}>
+              <Card
+                title="Post Instagram"
+                copyText={igCaption}
+                eventId={pack.eventId}
+                channel="ig_post"
+              >
                 <p className="whitespace-pre-wrap text-sm text-slate-700">
                   {pack.instagram_post.caption}
                 </p>
@@ -328,6 +483,8 @@ export default function PublicidadPage() {
             {pack.facebook_post && (
               <Card
                 title="Post Facebook"
+                eventId={pack.eventId}
+                channel="fb"
                 copyText={`${pack.facebook_post.texto || ""}\n\n${pack.facebook_post.cta || ""}`}
               >
                 <p className="whitespace-pre-wrap text-sm text-slate-700">
@@ -362,7 +519,10 @@ export default function PublicidadPage() {
                 setRated(1);
                 await fetch("/api/ai/feedback", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(await authHeaders()),
+                  },
                   body: JSON.stringify({
                     rating: 1,
                     source: "publicidad",
@@ -383,13 +543,22 @@ export default function PublicidadPage() {
                 setRated(-1);
                 await fetch("/api/ai/feedback", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(await authHeaders()),
+                  },
                   body: JSON.stringify({
                     rating: -1,
                     source: "publicidad",
                     relatedEventId: pack.eventId,
                     topicOrQuestion: pack.topic,
                     outputPreview: pack.articulo_corto,
+                    downvoted_sources: citationTitles.length
+                      ? citationTitles
+                      : undefined,
+                    citationTitles: citationTitles.length
+                      ? citationTitles
+                      : undefined,
                   }),
                 });
               }}
@@ -398,6 +567,8 @@ export default function PublicidadPage() {
               <ThumbsDown size={12} className="inline" /> No
             </button>
           </div>
+
+          {pack.eventId && <OutcomeForm eventId={pack.eventId} />}
 
           {pack.disclaimer && (
             <p className="text-[11px] italic text-slate-400">{pack.disclaimer}</p>
