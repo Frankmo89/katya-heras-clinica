@@ -238,7 +238,27 @@ export async function markMarketingPublished(
         row?.meta && typeof row.meta === "object"
           ? (row.meta as Record<string, unknown>)
           : {};
-      patch.meta = { ...prev, ...meta, published_at: new Date().toISOString() };
+      const channel =
+        typeof meta.channel === "string" ? meta.channel.trim() : "";
+      const prevChannels = Array.isArray(prev.published_channels)
+        ? (prev.published_channels as unknown[]).filter(
+            (c): c is string => typeof c === "string" && !!c,
+          )
+        : [];
+      const published_channels =
+        channel && !prevChannels.includes(channel)
+          ? [...prevChannels, channel]
+          : prevChannels.length
+            ? prevChannels
+            : channel
+              ? [channel]
+              : prevChannels;
+      patch.meta = {
+        ...prev,
+        ...meta,
+        published_channels,
+        published_at: new Date().toISOString(),
+      };
     }
 
     const { error } = await supabase

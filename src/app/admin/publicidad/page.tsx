@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { authHeaders } from "@/lib/authFetch";
 import {
   Megaphone,
@@ -10,9 +11,12 @@ import {
   Sparkles,
   ThumbsUp,
   ThumbsDown,
+  CheckCircle2,
 } from "lucide-react";
 
 type FolderFilter = "all" | "escuela" | "libros" | "tesis";
+
+type ChannelId = "ig_story" | "ig_post" | "fb" | "articulo";
 
 interface Pack {
   topic: string;
@@ -59,14 +63,21 @@ const SUGGESTIONS = [
   "Fascia / liberación miofascial",
 ];
 
+const CHANNEL_LABELS: Record<ChannelId, string> = {
+  ig_story: "Historia IG",
+  ig_post: "Post IG",
+  fb: "Facebook",
+  articulo: "Artículo",
+};
+
 async function markPublished(
   eventId: string | undefined,
   text: string,
-  channel: string,
-) {
-  if (!eventId || !text.trim()) return;
+  channel: ChannelId,
+): Promise<boolean> {
+  if (!eventId || !text.trim()) return false;
   try {
-    await fetch("/api/ai/publicidad/publish", {
+    const res = await fetch("/api/ai/publicidad/publish", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -74,20 +85,13 @@ async function markPublished(
       },
       body: JSON.stringify({ eventId, text, channel }),
     });
+    return res.ok;
   } catch {
-    // fire-and-forget for UX; server already soft-fails
+    return false;
   }
 }
 
-function CopyBtn({
-  text,
-  eventId,
-  channel,
-}: {
-  text: string;
-  eventId?: string;
-  channel: string;
-}) {
+function CopyBtn({ text }: { text: string }) {
   const [ok, setOk] = useState(false);
   return (
     <button
@@ -95,7 +99,6 @@ function CopyBtn({
       onClick={async () => {
         await navigator.clipboard.writeText(text);
         setOk(true);
-        void markPublished(eventId, text, channel);
         setTimeout(() => setOk(false), 1500);
       }}
       className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] text-slate-500 hover:border-[var(--color-bronze)] hover:text-[var(--color-bronze)]"
@@ -106,39 +109,117 @@ function CopyBtn({
   );
 }
 
+function PublishBtn({
+  text,
+  eventId,
+  channel,
+  published,
+  onPublished,
+}: {
+  text: string;
+  eventId?: string;
+  channel: ChannelId;
+  published: boolean;
+  onPublished: (channel: ChannelId) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function publish() {
+    if (!eventId || !text.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    const ok = await markPublished(eventId, text, channel);
+    setBusy(false);
+    if (ok) onPublished(channel);
+    else setErr("No se pudo marcar");
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={() => void publish()}
+        disabled={!eventId || busy || !text.trim()}
+        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 ${
+          published
+            ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+            : "bg-[var(--color-bronze)] text-white hover:bg-[var(--color-bronze-hover)]"
+        }`}
+      >
+        {busy ? (
+          <Loader2 size={12} className="animate-spin" />
+        ) : (
+          <CheckCircle2 size={12} />
+        )}
+        {published ? "Publicado ✓" : "Listo / Publicado"}
+      </button>
+      {err && <span className="text-[10px] text-red-600">{err}</span>}
+    </div>
+  );
+}
+
 function Card({
   title,
   children,
   copyText,
   eventId,
   channel,
+  publishedChannels,
+  onPublished,
 }: {
   title: string;
   children: React.ReactNode;
   copyText?: string;
   eventId?: string;
-  channel?: string;
+  channel?: ChannelId;
+  publishedChannels?: Set<ChannelId>;
+  onPublished?: (channel: ChannelId) => void;
 }) {
+  const isPublished = !!(channel && publishedChannels?.has(channel));
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
-      <div className="mb-3 flex items-center justify-between gap-2">
+    <div
+      className={`rounded-2xl border bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] ${
+        isPublished
+          ? "border-emerald-200 ring-1 ring-emerald-100"
+          : "border-slate-100"
+      }`}
+    >
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-bronze)]">
           {title}
         </h3>
-        {copyText ? (
-          <CopyBtn
-            text={copyText}
-            eventId={eventId}
-            channel={channel || "copy"}
-          />
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {copyText ? <CopyBtn text={copyText} /> : null}
+          {copyText && channel && onPublished ? (
+            <PublishBtn
+              text={copyText}
+              eventId={eventId}
+              channel={channel}
+              published={isPublished}
+              onPublished={onPublished}
+            />
+          ) : null}
+        </div>
       </div>
+      {isPublished && channel && (
+        <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-800">
+          <CheckCircle2 size={12} />
+          Marcado como publicado · {CHANNEL_LABELS[channel]}
+        </div>
+      )}
       {children}
     </div>
   );
 }
 
-function OutcomeForm({ eventId }: { eventId: string }) {
+function OutcomeForm({
+  eventId,
+  highlight,
+}: {
+  eventId: string;
+  highlight?: boolean;
+}) {
   const [leads, setLeads] = useState("");
   const [bookings, setBookings] = useState("");
   const [notes, setNotes] = useState("");
@@ -174,46 +255,110 @@ function OutcomeForm({ eventId }: { eventId: string }) {
     }
   }
 
+  const leadChips = ["0", "1", "2", "3"];
+  const bookingChips = ["0", "1"];
+
   return (
-    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-5">
+    <div
+      className={`rounded-2xl border border-dashed p-5 transition ${
+        highlight
+          ? "border-[var(--color-bronze)] bg-[rgba(192,138,94,0.08)] ring-1 ring-[rgba(192,138,94,0.25)]"
+          : "border-slate-200 bg-slate-50/80"
+      }`}
+    >
       <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-bronze)]">
-        Resultado de la campaña (opcional)
+        Resultados esta semana
       </h3>
       <p className="mt-1 text-[12px] text-slate-500">
-        Tras publicar, anota leads / citas para el loop de aprendizaje.
+        {highlight
+          ? "Ahora puedes anotar leads / citas para el loop de aprendizaje."
+          : "Tras publicar, anota leads / citas (un clic) para el loop de aprendizaje."}
       </p>
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
-        <label className="text-[12px] text-slate-600">
-          Leads
-          <input
-            type="number"
-            min={0}
-            value={leads}
-            onChange={(e) => setLeads(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-bronze)]"
-          />
-        </label>
-        <label className="text-[12px] text-slate-600">
-          Citas
-          <input
-            type="number"
-            min={0}
-            value={bookings}
-            onChange={(e) => setBookings(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-bronze)]"
-          />
-        </label>
-        <label className="text-[12px] text-slate-600 sm:col-span-1">
+
+      <div className="mt-3 space-y-3">
+        <div>
+          <p className="text-[12px] font-medium text-slate-600">Leads</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {leadChips.map((v) => (
+              <button
+                key={`lead-${v}`}
+                type="button"
+                onClick={() => {
+                  setLeads(v);
+                  setSaved(false);
+                }}
+                className={`rounded-full px-3 py-1 text-[12px] transition ${
+                  leads === v
+                    ? "bg-[var(--color-bronze)] text-white"
+                    : "bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-[var(--color-bronze)]"
+                }`}
+              >
+                {v === "3" ? "3+" : v}
+              </button>
+            ))}
+            <input
+              type="number"
+              min={0}
+              value={leads}
+              onChange={(e) => {
+                setLeads(e.target.value);
+                setSaved(false);
+              }}
+              placeholder="Otro"
+              className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] outline-none focus:border-[var(--color-bronze)]"
+            />
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[12px] font-medium text-slate-600">Citas</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {bookingChips.map((v) => (
+              <button
+                key={`book-${v}`}
+                type="button"
+                onClick={() => {
+                  setBookings(v);
+                  setSaved(false);
+                }}
+                className={`rounded-full px-3 py-1 text-[12px] transition ${
+                  bookings === v
+                    ? "bg-[var(--color-bronze)] text-white"
+                    : "bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-[var(--color-bronze)]"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+            <input
+              type="number"
+              min={0}
+              value={bookings}
+              onChange={(e) => {
+                setBookings(e.target.value);
+                setSaved(false);
+              }}
+              placeholder="Otro"
+              className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] outline-none focus:border-[var(--color-bronze)]"
+            />
+          </div>
+        </div>
+
+        <label className="block text-[12px] text-slate-600">
           Notas
           <input
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            onChange={(e) => {
+              setNotes(e.target.value);
+              setSaved(false);
+            }}
             placeholder="Ej. IG stories funcionó"
             className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-bronze)]"
           />
         </label>
       </div>
-      <div className="mt-3 flex items-center gap-3">
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={() => void save()}
@@ -223,9 +368,20 @@ function OutcomeForm({ eventId }: { eventId: string }) {
           {saving ? "Guardando…" : "Guardar resultado"}
         </button>
         {saved && (
-          <span className="text-[12px] text-emerald-700">Guardado ✓</span>
+          <span className="text-[12px] text-emerald-700">
+            Guardado ✓
+            {leads !== "" || bookings !== ""
+              ? ` · ${leads || "0"} leads · ${bookings || "0"} citas`
+              : ""}
+          </span>
         )}
         {err && <span className="text-[12px] text-red-600">{err}</span>}
+        <Link
+          href="/admin/insights"
+          className="ml-auto text-[12px] text-[var(--color-bronze)] underline-offset-2 hover:underline"
+        >
+          Ver en Insights
+        </Link>
       </div>
     </div>
   );
@@ -238,6 +394,17 @@ export default function PublicidadPage() {
   const [error, setError] = useState<string | null>(null);
   const [pack, setPack] = useState<Pack | null>(null);
   const [rated, setRated] = useState<-1 | 1 | null>(null);
+  const [publishedChannels, setPublishedChannels] = useState<Set<ChannelId>>(
+    () => new Set(),
+  );
+
+  function onPublished(channel: ChannelId) {
+    setPublishedChannels((prev) => {
+      const next = new Set(prev);
+      next.add(channel);
+      return next;
+    });
+  }
 
   async function generate(t?: string) {
     const final = (t ?? topic).trim();
@@ -247,6 +414,7 @@ export default function PublicidadPage() {
     setError(null);
     setPack(null);
     setRated(null);
+    setPublishedChannels(new Set());
     try {
       const res = await fetch("/api/ai/publicidad", {
         method: "POST",
@@ -269,6 +437,8 @@ export default function PublicidadPage() {
 
   const citationTitles =
     pack?.citations?.map((c) => c.title || "").filter(Boolean) || [];
+
+  const publishedList = [...publishedChannels];
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 p-8">
@@ -362,6 +532,21 @@ export default function PublicidadPage() {
             )}
           </div>
 
+          {publishedList.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50/80 px-4 py-2.5 text-[12px] text-emerald-800">
+              <CheckCircle2 size={14} className="shrink-0" />
+              <span className="font-medium">Marcado como publicado:</span>
+              {publishedList.map((ch) => (
+                <span
+                  key={ch}
+                  className="rounded-full bg-white px-2.5 py-0.5 text-[11px] ring-1 ring-emerald-100"
+                >
+                  {CHANNEL_LABELS[ch]}
+                </span>
+              ))}
+            </div>
+          )}
+
           {pack.estrategia && (
             <Card title="Estrategia">
               <div className="space-y-2 text-sm text-slate-700">
@@ -401,6 +586,8 @@ export default function PublicidadPage() {
                 copyText={pack.articulo_corto}
                 eventId={pack.eventId}
                 channel="articulo"
+                publishedChannels={publishedChannels}
+                onPublished={onPublished}
               >
                 <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-slate-700">
                   {pack.articulo_corto}
@@ -441,6 +628,8 @@ export default function PublicidadPage() {
                 title="Historia Instagram"
                 eventId={pack.eventId}
                 channel="ig_story"
+                publishedChannels={publishedChannels}
+                onPublished={onPublished}
                 copyText={[
                   pack.instagram_historia.texto_pantalla,
                   pack.instagram_historia.texto_apoyo,
@@ -466,6 +655,8 @@ export default function PublicidadPage() {
                 copyText={igCaption}
                 eventId={pack.eventId}
                 channel="ig_post"
+                publishedChannels={publishedChannels}
+                onPublished={onPublished}
               >
                 <p className="whitespace-pre-wrap text-sm text-slate-700">
                   {pack.instagram_post.caption}
@@ -485,6 +676,8 @@ export default function PublicidadPage() {
                 title="Post Facebook"
                 eventId={pack.eventId}
                 channel="fb"
+                publishedChannels={publishedChannels}
+                onPublished={onPublished}
                 copyText={`${pack.facebook_post.texto || ""}\n\n${pack.facebook_post.cta || ""}`}
               >
                 <p className="whitespace-pre-wrap text-sm text-slate-700">
@@ -568,7 +761,12 @@ export default function PublicidadPage() {
             </button>
           </div>
 
-          {pack.eventId && <OutcomeForm eventId={pack.eventId} />}
+          {pack.eventId && (
+            <OutcomeForm
+              eventId={pack.eventId}
+              highlight={publishedList.length > 0}
+            />
+          )}
 
           {pack.disclaimer && (
             <p className="text-[11px] italic text-slate-400">{pack.disclaimer}</p>
