@@ -4,6 +4,12 @@
 
 ---
 
+## Git workflow
+
+**All work happens on `dev`. Never commit or push to `master` without explicit approval.** `dev` builds as a Vercel preview, not production — push there freely. Before merging `dev` into `master`, give the user the preview URL to test and list any SQL migrations they must run first. Merge to `master` only when the user explicitly says so.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import Groq from "groq-sdk";
-import { logLearningEvent } from "@/lib/ai-learning";
+import {
+  PUBLICIDAD_PROMPT_VERSION,
+  groqChatWithFallback,
+  logMarketingEvent,
+} from "@/lib/ai-learning";
 import { requireStaffSession } from "@/lib/requireStaffSession";
 
 export const runtime = "nodejs";
@@ -146,7 +149,6 @@ export async function POST(request: Request) {
 
     const corpus = await askCorpus(base, token, topic, folderFilter);
 
-    const groq = new Groq({ apiKey: groqKey });
     const systemPrompt = `
 Eres la estratega de marketing de la clínica Katya Heras (masaje tailandés, osteopatía holística, kinesiotape / VNM).
 Trabajas SOLO con el material de estudio aportado. No inventes estudios ni cifras. No diagnostiques ni prometas curas.
@@ -177,20 +179,19 @@ Citas disponibles (títulos): ${JSON.stringify(
         .slice(0, 12),
     )}`;
 
-    const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+    const { raw, model } = await groqChatWithFallback({
+      apiKey: groqKey,
       temperature: 0.55,
-      response_format: { type: "json_object" },
+      json: true,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
     });
 
-    const raw = completion.choices[0]?.message?.content || "{}";
     let pack: Record<string, unknown>;
     try {
-      pack = JSON.parse(raw);
+      pack = JSON.parse(raw || "{}");
     } catch {
       return NextResponse.json(
         { error: "La IA no devolvió JSON válido de publicidad." },
@@ -201,19 +202,29 @@ Citas disponibles (títulos): ${JSON.stringify(
     const citationTitles = (corpus.citations as { title?: string }[])
       .map((c) => c?.title || "")
       .filter(Boolean);
-    const eventId = await logLearningEvent({
-      source: "publicidad",
+
+    const outputDraft =
+      typeof pack.articulo_corto === "string"
+        ? JSON.stringify({
+            articulo_corto: pack.articulo_corto,
+            estrategia: pack.estrategia,
+            instagram_post: pack.instagram_post,
+            facebook_post: pack.facebook_post,
+          })
+        : JSON.stringify(pack).slice(0, 8000);
+
+    const eventId = await logMarketingEvent({
       event_type: "generate",
-      topic_or_question: topic,
+      topic,
       folder_filter: folderFilter,
-      output_preview:
-        typeof pack.articulo_corto === "string"
-          ? pack.articulo_corto
-          : JSON.stringify(pack).slice(0, 800),
+      prompt_version: PUBLICIDAD_PROMPT_VERSION,
+      model,
+      output_draft: outputDraft,
       citation_titles: citationTitles,
       meta: {
         has_estrategia: Boolean(pack.estrategia),
         has_ig: Boolean(pack.instagram_post),
+        tone,
       },
     });
 
@@ -223,6 +234,8 @@ Citas disponibles (títulos): ${JSON.stringify(
       corpusPreview: corpus.answer.slice(0, 500),
       citations: corpus.citations,
       eventId,
+      model,
+      prompt_version: PUBLICIDAD_PROMPT_VERSION,
       ...pack,
     });
   } catch (err) {
