@@ -1,8 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { authHeaders } from "@/lib/authFetch";
+import { useClinicSettings } from "@/context/ClinicSettingsContext";
+import { instagramHandleFromUrl } from "@/lib/clinicSettings";
+import {
+  PUBLICIDAD_TONE_PRESETS,
+  type PublicidadTonePresetId,
+} from "@/lib/publicidadTone";
 import {
   Megaphone,
   Loader2,
@@ -12,6 +18,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 
 type FolderFilter = "all" | "escuela" | "libros" | "tesis";
@@ -45,6 +52,8 @@ interface Pack {
   eventId?: string;
   model?: string;
   prompt_version?: string;
+  tone?: string;
+  tone_preset?: string | null;
   error?: string;
 }
 
@@ -69,6 +78,23 @@ const CHANNEL_LABELS: Record<ChannelId, string> = {
   fb: "Facebook",
   articulo: "Artículo",
 };
+
+/** Soft client-side check for obvious placeholder phones in CTA text. */
+const FAKE_PHONE_RE =
+  /\b(?:555[-.\s]?\d{3}[-.\s]?\d{4}|123[-.\s]?4567|000[-.\s]?0000|\+52\s*555)\b/i;
+
+function collectCtaTexts(pack: Pack): string[] {
+  const out: string[] = [];
+  if (pack.instagram_historia?.cta) out.push(pack.instagram_historia.cta);
+  if (pack.facebook_post?.cta) out.push(pack.facebook_post.cta);
+  if (pack.instagram_post?.caption) out.push(pack.instagram_post.caption);
+  if (pack.articulo_corto) out.push(pack.articulo_corto);
+  return out;
+}
+
+function hasSuspiciousFakePhone(pack: Pack): boolean {
+  return collectCtaTexts(pack).some((t) => FAKE_PHONE_RE.test(t));
+}
 
 async function markPublished(
   eventId: string | undefined,
@@ -388,8 +414,11 @@ function OutcomeForm({
 }
 
 export default function PublicidadPage() {
+  const { settings, loading: settingsLoading } = useClinicSettings();
   const [topic, setTopic] = useState("");
   const [folderFilter, setFolderFilter] = useState<FolderFilter>("all");
+  const [tonePreset, setTonePreset] =
+    useState<PublicidadTonePresetId>("calido");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pack, setPack] = useState<Pack | null>(null);
@@ -397,6 +426,29 @@ export default function PublicidadPage() {
   const [publishedChannels, setPublishedChannels] = useState<Set<ChannelId>>(
     () => new Set(),
   );
+
+  const selectedTone =
+    PUBLICIDAD_TONE_PRESETS.find((p) => p.id === tonePreset) ??
+    PUBLICIDAD_TONE_PRESETS[0];
+
+  const igHandle = useMemo(
+    () => instagramHandleFromUrl(settings.instagram_url),
+    [settings.instagram_url],
+  );
+
+  const ctaParts = useMemo(() => {
+    const parts: string[] = [];
+    const wa = (settings.whatsapp_number || "").trim();
+    const email = (settings.contact_email || "").trim();
+    if (wa) parts.push(`WhatsApp ${wa}`);
+    if (igHandle) parts.push(igHandle);
+    else if ((settings.instagram_url || "").trim())
+      parts.push(String(settings.instagram_url).trim());
+    if (!wa && email) parts.push(email);
+    return parts;
+  }, [settings.whatsapp_number, settings.contact_email, settings.instagram_url, igHandle]);
+
+  const hasClinicContact = ctaParts.length > 0;
 
   function onPublished(channel: ChannelId) {
     setPublishedChannels((prev) => {
@@ -419,7 +471,12 @@ export default function PublicidadPage() {
       const res = await fetch("/api/ai/publicidad", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({ topic: final, folderFilter }),
+        body: JSON.stringify({
+          topic: final,
+          folderFilter,
+          tone: selectedTone.tone,
+          tone_preset: selectedTone.id,
+        }),
       });
       const json = (await res.json()) as Pack;
       if (!res.ok) throw new Error(json.error || `Error ${res.status}`);
@@ -471,6 +528,67 @@ export default function PublicidadPage() {
             </button>
           ))}
         </div>
+
+        <div className="mb-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-bronze)]">
+            Tono
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {PUBLICIDAD_TONE_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setTonePreset(p.id)}
+                title={p.tone}
+                className={`rounded-full px-3 py-1.5 text-[12px] transition ${
+                  tonePreset === p.id
+                    ? "bg-[var(--color-bronze)] text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {!settingsLoading && (
+          <div
+            className={`mb-4 rounded-xl px-3.5 py-2.5 text-[12px] ${
+              hasClinicContact
+                ? "border border-slate-100 bg-slate-50/80 text-slate-600"
+                : "border border-amber-100 bg-amber-50/80 text-amber-900"
+            }`}
+          >
+            {hasClinicContact ? (
+              <p>
+                <span className="font-medium text-slate-700">CTAs usarán:</span>{" "}
+                {ctaParts.join(" · ")}
+                {" · "}
+                <Link
+                  href="/admin/configuracion"
+                  className="text-[var(--color-bronze)] underline-offset-2 hover:underline"
+                >
+                  Editar en Configuración
+                </Link>
+              </p>
+            ) : (
+              <p className="flex flex-wrap items-start gap-1.5">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  Sin contacto en Configuración — los CTAs serán suaves (sin
+                  inventar teléfonos).{" "}
+                  <Link
+                    href="/admin/configuracion"
+                    className="font-medium text-[var(--color-bronze)] underline-offset-2 hover:underline"
+                  >
+                    Añadir WhatsApp / Instagram
+                  </Link>
+                </span>
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="mb-4 flex flex-wrap gap-2">
           {SUGGESTIONS.map((s) => (
@@ -524,6 +642,15 @@ export default function PublicidadPage() {
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
             <Megaphone size={16} className="text-[var(--color-bronze)]" />
             Tema: <span className="font-medium text-slate-800">{pack.topic}</span>
+            {(pack.tone_preset || pack.tone) && (
+              <span className="rounded-full bg-[rgba(192,138,94,0.12)] px-2 py-0.5 text-[10px] text-[var(--color-bronze)]">
+                Tono:{" "}
+                {PUBLICIDAD_TONE_PRESETS.find((p) => p.id === pack.tone_preset)
+                  ?.label ||
+                  pack.tone_preset ||
+                  "personalizado"}
+              </span>
+            )}
             {pack.model && (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
                 {pack.model}
@@ -531,6 +658,23 @@ export default function PublicidadPage() {
               </span>
             )}
           </div>
+
+          {hasSuspiciousFakePhone(pack) && (
+            <div className="flex flex-wrap items-start gap-2 rounded-xl border border-amber-100 bg-amber-50/80 px-4 py-2.5 text-[12px] text-amber-900">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>
+                Parece que un CTA incluye un teléfono tipo placeholder (555- /
+                123-4567). Revisa antes de publicar — preferimos el contacto de{" "}
+                <Link
+                  href="/admin/configuracion"
+                  className="font-medium text-[var(--color-bronze)] underline-offset-2 hover:underline"
+                >
+                  Configuración
+                </Link>
+                .
+              </span>
+            </div>
+          )}
 
           {publishedList.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50/80 px-4 py-2.5 text-[12px] text-emerald-800">

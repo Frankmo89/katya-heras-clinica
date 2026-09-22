@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /** Publicidad prompt / pack schema version. */
-export const PUBLICIDAD_PROMPT_VERSION = "pub-v2";
+export const PUBLICIDAD_PROMPT_VERSION = "pub-v3";
 
 /** OsteoRAG consult prompt version (clinic-side wrapper). */
 export const OSTEORAG_PROMPT_VERSION = "orag-v1";

@@ -64,3 +64,42 @@ export const CLINIC_SETTINGS_DEFAULTS: ClinicSettings = {
   about_gallery_3_url: null,
   about_location_image_url: null,
 };
+
+/**
+ * Parse an Instagram @handle from a full URL or bare handle.
+ * Returns e.g. "@katya" or null — never invents a handle.
+ */
+export function instagramHandleFromUrl(
+  value: string | null | undefined,
+): string | null {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+
+  // Bare handle (with or without leading @)
+  if (/^@?[A-Za-z0-9._]{1,30}$/.test(trimmed)) {
+    return `@${trimmed.replace(/^@/, "")}`;
+  }
+
+  try {
+    const withScheme = /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : `https://${trimmed}`;
+    const u = new URL(withScheme);
+    const host = u.hostname.replace(/^www\./i, "").toLowerCase();
+    if (
+      host !== "instagram.com" &&
+      host !== "instagr.am" &&
+      !host.endsWith(".instagram.com")
+    ) {
+      return null;
+    }
+    const seg = u.pathname.split("/").filter(Boolean)[0] || "";
+    if (/^[A-Za-z0-9._]{1,30}$/.test(seg)) {
+      return `@${seg}`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
