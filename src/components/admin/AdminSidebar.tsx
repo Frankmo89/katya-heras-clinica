@@ -11,6 +11,7 @@ import {
   Stethoscope,
   ShoppingBag,
   Megaphone,
+  BarChart3,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { label: "Servicios",     href: "/admin/servicios",     icon: Stethoscope },
   { label: "Tienda",        href: "/admin/tienda",        icon: ShoppingBag },
   { label: "Publicidad",    href: "/admin/publicidad",    icon: Megaphone },
+  { label: "Insights",      href: "/admin/insights",      icon: BarChart3 },
   { label: "Configuración", href: "/admin/configuracion", icon: Settings },
 ] as const;
 

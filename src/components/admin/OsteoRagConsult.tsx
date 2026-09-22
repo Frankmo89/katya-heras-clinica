@@ -236,6 +236,7 @@ export function OsteoRagConsult({ patientName, patientContext = "", patientId }:
               disabled={rated !== null}
               onClick={async () => {
                 setRated(-1);
+                const titles = citations.map((c) => c.title).filter(Boolean);
                 await fetch("/api/ai/feedback", {
                   method: "POST",
                   headers: { "Content-Type": "application/json", ...(await authHeaders()) },
@@ -246,6 +247,8 @@ export function OsteoRagConsult({ patientName, patientContext = "", patientId }:
                     topicOrQuestion: question,
                     patientId: patientId || null,
                     outputPreview: answer,
+                    downvoted_sources: titles.length ? titles : undefined,
+                    citationTitles: titles.length ? titles : undefined,
                   }),
                 });
               }}

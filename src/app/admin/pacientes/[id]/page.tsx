@@ -240,6 +240,7 @@ export default function PacienteDetailPage() {
         body: JSON.stringify({
           patientEmail: patient.email,
           patientName:  patient.full_name,
+          patientId:    patient.id,
         }),
       });
       if (!res.ok) throw new Error(`Error del servidor (${res.status})`);
