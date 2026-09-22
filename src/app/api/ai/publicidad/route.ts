@@ -4,6 +4,7 @@ import {
   groqChatWithFallback,
   logMarketingEvent,
 } from "@/lib/ai-learning";
+import { createClient } from "@supabase/supabase-js";
 import { requireStaffSession } from "@/lib/requireStaffSession";
 
 export const runtime = "nodejs";
@@ -65,6 +66,32 @@ async function osteoBearer(base: string): Promise<string | null> {
     expMs: Date.now() + Number(authJson.expires_in || 3600) * 1000,
   };
   return authJson.access_token;
+}
+
+
+async function clinicContactLine(): Promise<string> {
+  const url = env("NEXT_PUBLIC_SUPABASE_URL");
+  const key = env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return "";
+  try {
+    const supabase = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data } = await supabase
+      .from("clinic_settings")
+      .select("whatsapp_number, contact_email, instagram_url, facebook_url")
+      .eq("id", 1)
+      .maybeSingle();
+    if (!data) return "";
+    const parts: string[] = [];
+    if (data.whatsapp_number) parts.push(`WhatsApp: ${data.whatsapp_number}`);
+    if (data.contact_email) parts.push(`Email: ${data.contact_email}`);
+    if (data.instagram_url) parts.push(`Instagram: ${data.instagram_url}`);
+    if (data.facebook_url) parts.push(`Facebook: ${data.facebook_url}`);
+    return parts.join(" · ");
+  } catch {
+    return "";
+  }
 }
 
 async function askCorpus(
@@ -148,11 +175,14 @@ export async function POST(request: Request) {
     }
 
     const corpus = await askCorpus(base, token, topic, folderFilter);
+    const contactLine = await clinicContactLine();
 
     const systemPrompt = `
 Eres la estratega de marketing de la clínica Katya Heras (masaje tailandés, osteopatía holística, kinesiotape / VNM).
 Trabajas SOLO con el material de estudio aportado. No inventes estudios ni cifras. No diagnostiques ni prometas curas.
 Tono: ${tone}. Español de México/latam. Público: potenciales pacientes y comunidad wellness.
+Contacto real de la clínica (úsalo SOLO en CTAs si hace falta): ${contactLine || "ninguno configurado — no pongas teléfono ni email"}.
+NUNCA inventes números de teléfono, WhatsApp, emails ni handles (nada tipo 555-123-4567, +52 inventado, @fakes). Si no hay contacto real, el CTA debe ser genérico ("Agenda en la web", "Escríbenos por DM") sin inventar datos.
 
 Devuelve JSON estricto con:
 - "estrategia": { "objetivo": string, "angulo": string, "publico": string, "calendario_sugerido": string[] (3–5 ideas de posts en la semana) }
