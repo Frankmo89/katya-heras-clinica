@@ -13,10 +13,11 @@ export const RESUMEN_PROMPT_VERSION = "resumen-v1";
  * Groq model fallback chain for publicidad / resumen.
  * Try in order; if a model 404s / is decommissioned, try the next.
  */
+/** Self-serve Groq models as of 2026-09 (Llama 3.x moved to Enterprise). */
 export const GROQ_MODEL_FALLBACK = [
-  "llama-3.3-70b-versatile",
-  "llama-3.1-70b-versatile",
-  "llama-3.1-8b-instant",
+  "openai/gpt-oss-120b",
+  "qwen/qwen3.8-27b",
+  "openai/gpt-oss-20b",
 ] as const;
 
 export type MarketingEventType =
@@ -450,7 +451,9 @@ export async function groqChatWithFallback(opts: {
     }
   }
 
-  throw lastErr instanceof Error
-    ? lastErr
-    : new Error("Ningún modelo Groq disponible.");
+  const lastMsg =
+    lastErr instanceof Error ? lastErr.message : String(lastErr ?? "");
+  throw new Error(
+    `Ningún modelo Groq disponible (${models.join(" → ")}). Último error: ${lastMsg.slice(0, 240)}`,
+  );
 }
