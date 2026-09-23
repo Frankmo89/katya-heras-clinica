@@ -7,8 +7,7 @@ import type { Currency } from "@/lib/format";
 import { type ShopSettings, SHOP_SETTINGS_DEFAULTS } from "@/lib/shopSettings";
 import { type BookingSettings, BOOKING_SETTINGS_DEFAULTS } from "@/lib/bookingSettings";
 import { supabase } from "@/lib/supabase";
-import { uploadImage, ImageValidationError } from "@/lib/uploadImage";
-import { toFriendlyMessage } from "@/lib/errorMessages";
+import { validateImageFile, ImageValidationError } from "@/lib/uploadImage";
 import { revalidatePublic } from "@/lib/revalidatePublic";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -557,23 +556,37 @@ export default function ConfiguracionPage() {
   // ── Upload hero image to Supabase Storage ────────────────────────────────
 
   const uploadHeroImage = async (file: File) => {
-    setHeroUploading(true);
     try {
-      const publicUrl = await uploadImage(file, "public_assets", "hero", {
-        fileName: "hero-image",
-        upsert: true,
-      });
-      setClinicInfo((prev) => ({ ...prev, hero_image_url: publicUrl }));
-      showFeedback({ type: "success", message: "Imagen subida. Guarda los cambios para aplicarla." });
+      validateImageFile(file);
     } catch (err) {
-      console.error("[configuracion] hero upload failed", err);
       showFeedback({
         type: "error",
-        message: err instanceof ImageValidationError ? err.message : toFriendlyMessage(err),
+        message: err instanceof ImageValidationError ? err.message : "Imagen inválida.",
       });
-    } finally {
-      setHeroUploading(false);
+      return;
     }
+
+    setHeroUploading(true);
+    const ext = file.name.split(".").pop() ?? "jpg";
+    const fileName = `hero/hero-image.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("public_assets")
+      .upload(fileName, file, { upsert: true, contentType: file.type });
+
+    if (uploadError) {
+      showFeedback({ type: "error", message: "Error al subir la imagen." });
+      setHeroUploading(false);
+      return;
+    }
+
+    const { data: urlData } = supabase.storage
+      .from("public_assets")
+      .getPublicUrl(fileName);
+
+    setClinicInfo((prev) => ({ ...prev, hero_image_url: urlData.publicUrl }));
+    setHeroUploading(false);
+    showFeedback({ type: "success", message: "Imagen subida. Guarda los cambios para aplicarla." });
   };
 
   // ── Save hero appearance settings ─────────────────────────────────────────
@@ -604,23 +617,37 @@ export default function ConfiguracionPage() {
     storageName: string,
     fieldKey: keyof ClinicSettings,
   ) => {
-    setCmsUploadingField(fieldKey);
     try {
-      const publicUrl = await uploadImage(file, "public_assets", "cms", {
-        fileName: storageName,
-        upsert: true,
-      });
-      setClinicInfo((prev) => ({ ...prev, [fieldKey]: publicUrl }));
-      showFeedback({ type: "success", message: "Imagen subida. Guarda los cambios para aplicarla." });
+      validateImageFile(file);
     } catch (err) {
-      console.error("[configuracion] cms upload failed", { fieldKey, storageName, err });
       showFeedback({
         type: "error",
-        message: err instanceof ImageValidationError ? err.message : toFriendlyMessage(err),
+        message: err instanceof ImageValidationError ? err.message : "Imagen inválida.",
       });
-    } finally {
-      setCmsUploadingField(null);
+      return;
     }
+
+    setCmsUploadingField(fieldKey);
+    const ext = file.name.split(".").pop() ?? "jpg";
+    const fileName = `cms/${storageName}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("public_assets")
+      .upload(fileName, file, { upsert: true, contentType: file.type });
+
+    if (uploadError) {
+      showFeedback({ type: "error", message: "Error al subir la imagen." });
+      setCmsUploadingField(null);
+      return;
+    }
+
+    const { data: urlData } = supabase.storage
+      .from("public_assets")
+      .getPublicUrl(fileName);
+
+    setClinicInfo((prev) => ({ ...prev, [fieldKey]: urlData.publicUrl }));
+    setCmsUploadingField(null);
+    showFeedback({ type: "success", message: "Imagen subida. Guarda los cambios para aplicarla." });
   };
 
   // ── Save CMS content settings ──────────────────────────────────────────────

@@ -183,10 +183,7 @@ export default function EditarServicioPage() {
         faqs:             cleanFaqs.length     > 0 ? cleanFaqs     : null,
       }).eq("id", id);
 
-      if (dbError) {
-        console.error("[servicios/id] services update failed", dbError);
-        throw new Error(dbError.message);
-      }
+      if (dbError) throw new Error(dbError.message);
 
       revalidatePublic();
       setSaved(true);

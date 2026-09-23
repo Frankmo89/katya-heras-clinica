@@ -168,10 +168,7 @@ export default function EditarProductoPage() {
         details:        cleanDetails.length     > 0 ? cleanDetails : null,
       }).eq("id", id);
 
-      if (dbError) {
-        console.error("[tienda/id] products update failed", dbError);
-        throw new Error(dbError.message);
-      }
+      if (dbError) throw new Error(dbError.message);
 
       revalidatePublic();
       setSaved(true);

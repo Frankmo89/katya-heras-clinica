@@ -121,10 +121,7 @@ export default function NuevoProductoPage() {
         details:        cleanDetails.length  > 0 ? cleanDetails : null,
       });
 
-      if (dbError) {
-        console.error("[tienda/nuevo] products insert failed", dbError);
-        throw new Error(dbError.message);
-      }
+      if (dbError) throw new Error(dbError.message);
 
       revalidatePublic();
       setSaved(true);
