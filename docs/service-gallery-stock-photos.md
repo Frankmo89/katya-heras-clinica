@@ -112,6 +112,7 @@ Saved under `/workspace/katya-service-photos/screenshots/` (not committed; evide
 - `gallery-masaje-relajante.png`
 - `gallery-osteopatia.png`
 - `gallery-craneosacral.png`
+- `gallery-craneosacral-v2.png` (MRI accessory replaced with sacrum technique 05)
 - `gallery-atm.png`
 - `gallery-atm-v2.png` (skull replaced with TMJ technique 05b)
 
