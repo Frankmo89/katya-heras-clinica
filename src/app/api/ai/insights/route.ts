@@ -21,9 +21,65 @@ function bump(map: CountMap, key: string | null | undefined) {
   map[k] = (map[k] || 0) + 1;
 }
 
+type DaysFilter = "7" | "30" | "90" | "all";
+type RatingFilter = "all" | "up" | "down";
+type PublishedFilter = "all" | "yes" | "no";
+
+function parseDays(raw: string | null): DaysFilter {
+  if (raw === "7" || raw === "30" || raw === "90" || raw === "all") return raw;
+  return "30";
+}
+
+function parseRating(raw: string | null): RatingFilter {
+  if (raw === "up" || raw === "down" || raw === "all") return raw;
+  return "all";
+}
+
+function parsePublished(raw: string | null): PublishedFilter {
+  if (raw === "yes" || raw === "no" || raw === "all") return raw;
+  return "all";
+}
+
+function sinceIso(days: DaysFilter): string | null {
+  if (days === "all") return null;
+  const n = Number(days);
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString();
+}
+
+function channelFromMeta(meta: unknown): string | null {
+  if (!meta || typeof meta !== "object") return null;
+  const m = meta as Record<string, unknown>;
+  if (typeof m.channel === "string" && m.channel.trim()) return m.channel.trim();
+  if (Array.isArray(m.published_channels)) {
+    const chans = m.published_channels.filter(
+      (c): c is string => typeof c === "string" && !!c.trim(),
+    );
+    if (chans.length) return chans[chans.length - 1] ?? null;
+  }
+  return null;
+}
+
+function channelsFromMeta(meta: unknown): string[] {
+  if (!meta || typeof meta !== "object") return [];
+  const m = meta as Record<string, unknown>;
+  if (Array.isArray(m.published_channels)) {
+    return m.published_channels.filter(
+      (c): c is string => typeof c === "string" && !!c.trim(),
+    );
+  }
+  if (typeof m.channel === "string" && m.channel.trim()) {
+    return [m.channel.trim()];
+  }
+  return [];
+}
+
 /**
  * GET /api/ai/insights
  * Staff-only summary of recent marketing + clinical ML events.
+ * Query: days=7|30|90|all (default 30), rating=all|up|down, published=all|yes|no
+ * Optional: includeHidden=1 to include soft-deleted marketing rows (hidden_at set).
  */
 export async function GET(request: Request) {
   try {
@@ -39,33 +95,90 @@ export async function GET(request: Request) {
       );
     }
 
-    const [mktRes, clinRes] = await Promise.all([
-      supabase
+    const url = new URL(request.url);
+    const days = parseDays(url.searchParams.get("days"));
+    const rating = parseRating(url.searchParams.get("rating"));
+    const published = parsePublished(url.searchParams.get("published"));
+    const includeHidden =
+      url.searchParams.get("includeHidden") === "1" ||
+      url.searchParams.get("includeHidden") === "true";
+    const since = sinceIso(days);
+
+    const mktSelect =
+      "id, created_at, event_type, topic, prompt_version, model, rating, rating_note, downvoted_sources, output_published, output_draft, outcome_leads, outcome_bookings, meta";
+
+    let mktQ = supabase
+      .from("ai_marketing_events")
+      .select(mktSelect)
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (!includeHidden) {
+      mktQ = mktQ.is("hidden_at", null);
+    }
+
+    let clinQ = supabase
+      .from("ai_clinical_events")
+      .select(
+        "id, created_at, source, event_type, topic_or_question, prompt_version, model, rating, rating_note, downvoted_sources, output_draft",
+      )
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (since) {
+      mktQ = mktQ.gte("created_at", since);
+      clinQ = clinQ.gte("created_at", since);
+    }
+
+    const [mktRes0, clinRes] = await Promise.all([mktQ, clinQ]);
+    let mktRes = mktRes0;
+
+    // Column may not exist until migration 0039 is applied — fall back once.
+    if (
+      mktRes.error &&
+      /hidden_at/i.test(mktRes.error.message) &&
+      !includeHidden
+    ) {
+      console.warn(
+        "insights marketing: hidden_at missing — apply migration 0039; loading without filter",
+      );
+      let mktRetry = supabase
         .from("ai_marketing_events")
-        .select(
-          "id, created_at, event_type, topic, prompt_version, model, rating, rating_note, downvoted_sources, output_published, output_draft, outcome_leads, outcome_bookings",
-        )
+        .select(mktSelect)
         .order("created_at", { ascending: false })
-        .limit(30),
-      supabase
-        .from("ai_clinical_events")
-        .select(
-          "id, created_at, source, event_type, topic_or_question, prompt_version, model, rating, rating_note, downvoted_sources, output_draft",
-        )
-        .order("created_at", { ascending: false })
-        .limit(30),
-    ]);
+        .limit(200);
+      if (since) mktRetry = mktRetry.gte("created_at", since);
+      mktRes = await mktRetry;
+    }
 
     if (mktRes.error) console.warn("insights marketing", mktRes.error.message);
     if (clinRes.error) console.warn("insights clinical", clinRes.error.message);
 
-    const marketing = mktRes.data || [];
-    const clinical = clinRes.data || [];
+    let marketing = mktRes.data || [];
+    let clinical = clinRes.data || [];
+
+    if (rating === "up") {
+      marketing = marketing.filter((r) => r.rating === 1);
+      clinical = clinical.filter((r) => r.rating === 1);
+    } else if (rating === "down") {
+      marketing = marketing.filter((r) => r.rating === -1);
+      clinical = clinical.filter((r) => r.rating === -1);
+    }
+
+    if (published === "yes") {
+      marketing = marketing.filter((r) => Boolean(r.output_published));
+    } else if (published === "no") {
+      marketing = marketing.filter(
+        (r) => r.event_type === "generate" && !r.output_published,
+      );
+    }
 
     let thumbsUp = 0;
     let thumbsDown = 0;
-    let published = 0;
+    let publishedCount = 0;
     let draftOnly = 0;
+    let totalLeads = 0;
+    let totalBookings = 0;
     const topics: CountMap = {};
     const downvoted: string[] = [];
 
@@ -74,9 +187,12 @@ export async function GET(request: Request) {
       if (row.rating === -1) thumbsDown += 1;
       if (row.event_type === "generate") {
         bump(topics, row.topic);
-        if (row.output_published) published += 1;
+        if (row.output_published) publishedCount += 1;
         else draftOnly += 1;
       }
+      if (typeof row.outcome_leads === "number") totalLeads += row.outcome_leads;
+      if (typeof row.outcome_bookings === "number")
+        totalBookings += row.outcome_bookings;
       if (Array.isArray(row.downvoted_sources)) {
         for (const s of row.downvoted_sources) {
           if (s && downvoted.length < 40) downvoted.push(String(s));
@@ -102,6 +218,8 @@ export async function GET(request: Request) {
       .slice(0, 10)
       .map(([topic, count]) => ({ topic, count }));
 
+    const listLimit = 40;
+
     const summarizeMkt = (row: (typeof marketing)[0]) => ({
       id: row.id,
       created_at: row.created_at,
@@ -117,6 +235,8 @@ export async function GET(request: Request) {
       ),
       outcome_leads: row.outcome_leads,
       outcome_bookings: row.outcome_bookings,
+      channel: channelFromMeta(row.meta),
+      channels: channelsFromMeta(row.meta),
     });
 
     const summarizeClin = (row: (typeof clinical)[0]) => ({
@@ -132,18 +252,21 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({
+      filters: { days, rating, published, includeHidden },
       counts: {
         thumbsUp,
         thumbsDown,
-        published,
+        published: publishedCount,
         draftOnly,
         marketingRows: marketing.length,
         clinicalRows: clinical.length,
+        totalLeads,
+        totalBookings,
       },
       topTopics,
       recentDownvotedSources: [...new Set(downvoted)].slice(0, 20),
-      marketing: marketing.map(summarizeMkt),
-      clinical: clinical.map(summarizeClin),
+      marketing: marketing.slice(0, listLimit).map(summarizeMkt),
+      clinical: clinical.slice(0, listLimit).map(summarizeClin),
     });
   } catch (err) {
     console.error("insights", err);

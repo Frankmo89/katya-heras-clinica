@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import { resendFromAddress } from "@/lib/emailFrom";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -26,7 +27,7 @@ async function alertClinic(supabase: SupabaseClient, reason: string) {
       return;
     }
     await resend.emails.send({
-      from:    "Clinica Katya Heras <onboarding@resend.dev>",
+      from:    resendFromAddress(),
       to:      [to],
       subject: "⚠️ [Katya Heras] La calendarización automática necesita atención",
       html: `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1E293B;">

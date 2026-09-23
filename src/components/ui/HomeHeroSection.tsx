@@ -1,8 +1,8 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { HeroVideo, type HeroVideoSource } from "@/components/ui/HeroVideo";
 import { useLanguage } from "@/context/LanguageContext";
 
 const COPY = {
@@ -26,9 +26,23 @@ const COPY = {
   },
 } as const;
 
-const DEFAULT_HERO_REEL = "/hero-reel.mp4";
-const DEFAULT_POSTER =
-  "https://hlotbgirhjbnppdtllkv.supabase.co/storage/v1/object/public/public_assets/hero/hero-image.jpg";
+/** Fase 2 assets under public/hero/ (clip 01): mobile native vertical + desktop style-B blur.
+ *  See public/hero/README.md for trim/encode notes and size targets. */
+const HERO_POSTER = "/hero/hero-poster.webp";
+const HERO_SOURCES: HeroVideoSource[] = [
+  {
+    src: "/hero/hero-mobile.mp4",
+    media: "(max-width: 767px)",
+    type: "video/mp4",
+  },
+  {
+    src: "/hero/hero-desktop.mp4",
+    media: "(min-width: 768px)",
+    type: "video/mp4",
+  },
+  // Fallback for browsers that ignore source media queries
+  { src: "/hero/hero-desktop.mp4", type: "video/mp4" },
+];
 
 type HeroProps = {
   heroTitle?: string | null;
@@ -45,61 +59,24 @@ export function HomeHeroSection({
 }: HeroProps = {}) {
   const { lang } = useLanguage();
   const c = COPY[lang];
-  const [reduceMotion, setReduceMotion] = useState(false);
-  // iOS Low Power Mode (and some other autoplay-blocking contexts) rejects
-  // video.play() and leaves the browser showing a native play-button
-  // overlay on the poster frame instead of actually looping the video —
-  // looks broken. Once play() fails, fall back to the plain poster image
-  // for good (no retry loop, no visible button either way).
-  const [videoFailed, setVideoFailed] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const apply = () => setReduceMotion(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
-
-  const videoSrc = (heroVideoUrl && heroVideoUrl.trim()) || DEFAULT_HERO_REEL;
-  const posterSrc = (heroImageUrl && heroImageUrl.trim()) || DEFAULT_POSTER;
-  const showVideo = Boolean(videoSrc) && !reduceMotion && !videoFailed;
-
-  useEffect(() => {
-    if (!showVideo) return;
-    const video = videoRef.current;
-    if (!video) return;
-    video.play()?.catch(() => setVideoFailed(true));
-  }, [showVideo, videoSrc]);
+  const posterSrc = (heroImageUrl && heroImageUrl.trim()) || HERO_POSTER;
+  // Optional single override (env / CMS) — otherwise multi-resolution hero assets
+  const override = heroVideoUrl?.trim();
+  const sources: HeroVideoSource[] = override
+    ? [{ src: override, type: "video/mp4" }]
+    : HERO_SOURCES;
 
   return (
     /* Breathing room under sticky nav pill (~72px) — Mobbin-style air */
     <section className="relative mx-auto max-w-[1280px] px-4 pb-10 pt-6 md:px-8 md:pb-16 md:pt-10">
       <div className="relative min-h-[72vh] overflow-hidden rounded-[28px] shadow-[0_24px_80px_rgba(0,0,0,0.18)] md:min-h-[78vh] md:rounded-[32px]">
-        {/* Full-bleed media */}
-        {showVideo ? (
-          <video
-            ref={videoRef}
-            className="absolute inset-0 h-full w-full scale-[1.06] object-cover"
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="auto"
-            poster={posterSrc}
-            aria-hidden
-          >
-            <source src={videoSrc} type="video/mp4" />
-          </video>
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={posterSrc}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        )}
+        {/* Full-bleed media — HeroVideo owns mute/play/fallback/reduced-motion */}
+        <HeroVideo
+          sources={sources}
+          poster={posterSrc}
+          className="absolute inset-0 h-full w-full scale-[1.06] object-cover"
+        />
 
         {/* Cinematic scrim for readable text on video */}
         <div
@@ -117,7 +94,7 @@ export function HomeHeroSection({
           }}
         />
 
-        {/* Text INSIDE the hero — Mobbin full-bleed pattern */}
+        {/* Text INSIDE the hero — Mobbin full-bleed pattern (unchanged Phase 1) */}
         <div className="relative z-10 flex min-h-[72vh] flex-col justify-end px-6 pb-10 pt-24 md:min-h-[78vh] md:px-12 md:pb-14 md:pt-28">
           <p className="mb-4 text-[11px] uppercase tracking-[0.28em] text-white/80 md:mb-5 md:text-xs">
             {c.eyebrow}

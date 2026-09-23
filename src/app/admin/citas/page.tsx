@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   CalendarDays, Plus, Trash2, Check, AlertCircle,
-  MessageCircle, Search, X, ChevronRight, ChevronLeft,
+  MessageCircle, Search, X, ChevronRight, ChevronLeft, Mail, Loader2,
 } from "lucide-react";
+import { authHeaders } from "@/lib/authFetch";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { mapDbService, type DbService, type Service } from "@/data/services";
@@ -20,6 +21,40 @@ function getTodayIso(): string {
 function dateToIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+
+/** Add (or subtract) whole days from an ISO YYYY-MM-DD date string. */
+function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return dateToIso(dt);
+}
+
+type RangePreset = "upcoming30" | "past30" | "thisMonth" | "nextMonth" | "all";
+
+function rangeBoundsFor(preset: RangePreset): { from: string | null; to: string | null } {
+  const today = getTodayIso();
+  const now = new Date();
+  if (preset === "upcoming30") return { from: today, to: addDaysIso(today, 30) };
+  if (preset === "past30") return { from: addDaysIso(today, -30), to: today };
+  if (preset === "thisMonth") {
+    const from = dateToIso(new Date(now.getFullYear(), now.getMonth(), 1));
+    const to = dateToIso(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+    return { from, to };
+  }
+  if (preset === "nextMonth") {
+    const from = dateToIso(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+    const to = dateToIso(new Date(now.getFullYear(), now.getMonth() + 2, 0));
+    return { from, to };
+  }
+  return { from: null, to: null };
+}
+
+function monthHeading(yyyyMm: string): string {
+  const [y, m] = yyyyMm.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+}
+
 
 /**
  * Converts a "YYYY-MM-DD" + "HH:MM" pair, understood as Tijuana wall-clock
@@ -84,7 +119,14 @@ type Booking = {
   status: string;
   is_manual: boolean;
   created_at: string;
+  patient_email_sent_at?: string | null;
+  patient_email_last_status?: "sent" | "failed" | null;
+  patient_email_last_attempt_at?: string | null;
+  patient_email_staff_resend_count?: number | null;
 };
+
+const STAFF_RESEND_MAX = 3;
+const STAFF_RESEND_COOLDOWN_MS = 2.5 * 60 * 1000;
 
 type Feedback = { type: "success" | "error"; message: string };
 
@@ -155,6 +197,76 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function formatAttemptTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.toLocaleString("es-MX", {
+    timeZone: "America/Tijuana",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+/** Derive display status: prefer last_status; fall back to sent_at for older rows. */
+function emailSendStatus(b: Booking): "sent" | "failed" | "never" {
+  if (b.patient_email_last_status === "sent" || b.patient_email_last_status === "failed") {
+    return b.patient_email_last_status;
+  }
+  if (b.patient_email_sent_at) return "sent";
+  return "never";
+}
+
+function EmailStatusChip({ booking }: { booking: Booking }) {
+  const status = emailSendStatus(booking);
+  const when = formatAttemptTime(
+    booking.patient_email_last_attempt_at ?? booking.patient_email_sent_at
+  );
+  const base =
+    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap";
+  if (status === "sent") {
+    return (
+      <span className={`${base} bg-emerald-50 text-emerald-700`} title={when ?? undefined}>
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        Enviado{when ? ` · ${when}` : ""}
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span className={`${base} bg-red-50 text-red-600`} title={when ?? undefined}>
+        <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+        Falló{when ? ` · ${when}` : ""}
+      </span>
+    );
+  }
+  return (
+    <span className={`${base} bg-slate-100 text-slate-500`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+      Sin enviar
+    </span>
+  );
+}
+
+function staffResendBlockReason(b: Booking): string | null {
+  if (!b.patient_email) return "Sin correo del paciente";
+  const count = Number(b.patient_email_staff_resend_count ?? 0);
+  if (count >= STAFF_RESEND_MAX) {
+    return `Límite de ${STAFF_RESEND_MAX} reenvíos alcanzado`;
+  }
+  if (b.patient_email_last_attempt_at) {
+    const elapsed = Date.now() - new Date(b.patient_email_last_attempt_at).getTime();
+    if (Number.isFinite(elapsed) && elapsed < STAFF_RESEND_COOLDOWN_MS) {
+      const sec = Math.ceil((STAFF_RESEND_COOLDOWN_MS - elapsed) / 1000);
+      return `Espera ${sec}s para reenviar`;
+    }
+  }
+  return null;
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function CitasPage() {
   const searchParams   = useSearchParams();
@@ -181,7 +293,11 @@ export default function CitasPage() {
   // ── Citas tab ──────────────────────────────────────────────────────────
   const [bookings,        setBookings]        = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
+  const [resendingId,     setResendingId]     = useState<string | null>(null);
+  const [confirmResend,   setConfirmResend]   = useState<Booking | null>(null);
   const [search,          setSearch]          = useState("");
+  // Default list: today → +30 days. Calendar day-pick still overrides.
+  const [rangePreset,     setRangePreset]     = useState<RangePreset>("upcoming30");
 
   // Services catalog — same "services" table /servicios and /reservar read from.
   const [services, setServices] = useState<Service[]>([]);
@@ -327,6 +443,89 @@ export default function CitasPage() {
     }
   };
 
+  const resendPatientConfirmation = async (booking: Booking) => {
+    const block = staffResendBlockReason(booking);
+    if (block) {
+      showFeedback({ type: "error", message: block });
+      return;
+    }
+    setResendingId(booking.id);
+    setConfirmResend(null);
+    try {
+      const res = await fetch("/api/admin/bookings/resend-confirmation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await authHeaders()),
+        },
+        body: JSON.stringify({ bookingId: booking.id, lang: "es" }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        sent?: boolean;
+        message?: string;
+        error?: string;
+        lastStatus?: "sent" | "failed";
+        lastAttemptAt?: string;
+        patientEmailSentAt?: string;
+        staffResendCount?: number;
+      };
+      if (!res.ok || !data.sent) {
+        // Refresh local row fields when the API stamped a failed attempt.
+        if (data.lastStatus || data.lastAttemptAt || data.staffResendCount != null) {
+          setBookings((prev) =>
+            prev.map((b) =>
+              b.id === booking.id
+                ? {
+                    ...b,
+                    patient_email_last_status:
+                      data.lastStatus ?? b.patient_email_last_status,
+                    patient_email_last_attempt_at:
+                      data.lastAttemptAt ?? b.patient_email_last_attempt_at,
+                    patient_email_staff_resend_count:
+                      data.staffResendCount ?? b.patient_email_staff_resend_count,
+                  }
+                : b
+            )
+          );
+        }
+        showFeedback({
+          type: "error",
+          message:
+            data.message ||
+            (data.error === "rate_limited"
+              ? "Reenvío limitado. Espera un momento o se alcanzó el máximo."
+              : "No se pudo reenviar la confirmación."),
+        });
+        return;
+      }
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === booking.id
+            ? {
+                ...b,
+                patient_email_sent_at:
+                  data.patientEmailSentAt ?? data.lastAttemptAt ?? b.patient_email_sent_at,
+                patient_email_last_status: "sent",
+                patient_email_last_attempt_at:
+                  data.lastAttemptAt ?? b.patient_email_last_attempt_at,
+                patient_email_staff_resend_count:
+                  data.staffResendCount ?? b.patient_email_staff_resend_count,
+              }
+            : b
+        )
+      );
+      showFeedback({
+        type: "success",
+        message: `Confirmación reenviada a ${booking.patient_email}.`,
+      });
+    } catch (err) {
+      console.warn("[citas] resend confirmation failed:", err);
+      showFeedback({ type: "error", message: "Error de red al reenviar." });
+    } finally {
+      setResendingId(null);
+    }
+  };
+
   const resetManualForm = () => {
     setManualDate("");
     setManualTime("");
@@ -421,15 +620,34 @@ export default function CitasPage() {
       : [];
 
   const selectedIso = selectedDate ? dateToIso(selectedDate) : null;
+  const rangeBounds = rangeBoundsFor(rangePreset);
 
-  const filteredBookings = (bookings ?? []).filter(
-    (b) =>
-      (selectedIso === null || b.date === selectedIso) &&
-      (
-        search.trim() === "" ||
-        (b.patient_name?.toLowerCase() ?? "").includes(search.toLowerCase().trim())
-      )
-  );
+  const filteredBookings = (bookings ?? []).filter((b) => {
+    const matchesSearch =
+      search.trim() === "" ||
+      (b.patient_name?.toLowerCase() ?? "").includes(search.toLowerCase().trim());
+    if (!matchesSearch) return false;
+    // A picked calendar day wins over the range preset.
+    if (selectedIso !== null) return b.date === selectedIso;
+    if (rangeBounds.from && b.date < rangeBounds.from) return false;
+    if (rangeBounds.to && b.date > rangeBounds.to) return false;
+    return true;
+  });
+
+  /** Group filtered bookings by YYYY-MM for phone-friendly month sections. */
+  const bookingsByMonth: { key: string; label: string; items: Booking[] }[] = [];
+  {
+    const map = new Map<string, Booking[]>();
+    for (const b of filteredBookings) {
+      const key = b.date.slice(0, 7);
+      const list = map.get(key);
+      if (list) list.push(b);
+      else map.set(key, [b]);
+    }
+    for (const [key, items] of map) {
+      bookingsByMonth.push({ key, label: monthHeading(key), items });
+    }
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
@@ -471,9 +689,9 @@ export default function CitasPage() {
             }`}
           >
             {tab === "agenda" ? "Agenda y Disponibilidad" : "Citas Próximas"}
-            {tab === "citas" && !bookingsLoading && bookings.length > 0 && (
+            {tab === "citas" && !bookingsLoading && filteredBookings.length > 0 && (
               <span className="ml-2 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-[rgba(192,138,94,0.15)] text-[var(--color-bronze)] text-[10px] font-semibold">
-                {bookings.length}
+                {filteredBookings.length}
               </span>
             )}
           </button>
@@ -711,6 +929,36 @@ export default function CitasPage() {
             );
           })()}
 
+          {/* Range presets — default upcoming 30 days */}
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(
+              [
+                ["upcoming30", "Próximos 30 días"],
+                ["past30", "Últimos 30 días"],
+                ["thisMonth", "Este mes"],
+                ["nextMonth", "Mes siguiente"],
+                ["all", "Todas"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setRangePreset(id);
+                  setSelectedDate(null);
+                  if (todayFilter) router.replace("/admin/citas");
+                }}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                  rangePreset === id && !selectedIso
+                    ? "bg-[var(--color-bronze)] text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* Toolbar */}
           <div className="mb-6 flex flex-wrap items-center gap-3">
             {/* Search */}
@@ -757,37 +1005,54 @@ export default function CitasPage() {
                   <CalendarDays size={24} className="text-[var(--color-bronze)]" strokeWidth={1.5} />
                 </div>
                 <p className="mb-1 text-sm font-medium text-slate-700">
-                  {search ? "Sin resultados" : selectedIso ? "Sin citas este día" : "No hay citas"}
+                  {search
+                    ? "Sin resultados"
+                    : selectedIso
+                    ? "Sin citas este día"
+                    : rangePreset === "upcoming30"
+                    ? "Sin citas en los próximos 30 días"
+                    : "No hay citas en este rango"}
                 </p>
                 <p className="max-w-xs text-xs leading-relaxed text-[var(--color-text-muted)]">
                   {search
                     ? `No se encontraron citas para "${search}".`
                     : selectedIso
                     ? "No hay citas programadas para este día."
-                    : "Las reservas de las pacientes aparecerán aquí."}
+                    : "Prueba otro rango o crea una cita manual."}
                 </p>
               </div>
             ) : (
               <>
                 {/* Desktop table header */}
-                <div className="hidden lg:grid grid-cols-[88px_1fr_160px_36px_108px_auto] items-center gap-4 border-b border-slate-100 bg-slate-50 px-6 py-3 text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+                <div className="hidden lg:grid grid-cols-[88px_1fr_140px_36px_100px_110px_auto] items-center gap-3 border-b border-slate-100 bg-slate-50 px-6 py-3 text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
                   <span>Fecha</span>
                   <span>Paciente</span>
                   <span>Servicio</span>
                   <span>WA</span>
                   <span>Estado</span>
+                  <span>Email</span>
                   <span>Acciones</span>
                 </div>
 
-                {filteredBookings.map((booking, idx) => {
+                {bookingsByMonth.map((group) => (
+                  <div key={group.key}>
+                    <div className="sticky top-0 z-[1] border-b border-slate-100 bg-[rgba(248,250,252,0.96)] px-6 py-2.5 backdrop-blur-sm">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-bronze)] capitalize">
+                        {group.label}
+                        <span className="ml-2 font-normal normal-case tracking-normal text-slate-400">
+                          {group.items.length} {group.items.length === 1 ? "cita" : "citas"}
+                        </span>
+                      </p>
+                    </div>
+                    {group.items.map((booking, idx) => {
                   const svcName =
                     services.find((s) => s.id === booking.service_id)?.es.name ??
                     booking.service_id;
                   return (
                     <div
                       key={booking.id}
-                      className={`flex flex-col lg:grid lg:grid-cols-[88px_1fr_160px_36px_108px_auto] lg:items-center gap-3 lg:gap-4 px-6 py-5 ${
-                        idx !== filteredBookings.length - 1 ? "border-b border-slate-50" : ""
+                      className={`flex flex-col lg:grid lg:grid-cols-[88px_1fr_140px_36px_100px_110px_auto] lg:items-center gap-3 lg:gap-3 px-6 py-5 ${
+                        idx !== group.items.length - 1 ? "border-b border-slate-50" : ""
                       }`}
                     >
                       {/* Date + time */}
@@ -873,8 +1138,33 @@ export default function CitasPage() {
                       {/* Status */}
                       <StatusBadge status={booking.status ?? "confirmed"} />
 
+                      {/* Patient confirmation email status */}
+                      <div className="min-w-0">
+                        <EmailStatusChip booking={booking} />
+                      </div>
+
                       {/* Actions */}
                       <div className="flex flex-wrap gap-2">
+                        {(() => {
+                          const blockReason = staffResendBlockReason(booking);
+                          const busy = resendingId === booking.id;
+                          return (
+                            <button
+                              type="button"
+                              disabled={!!blockReason || busy}
+                              title={blockReason ?? "Reenviar correo de confirmación"}
+                              onClick={() => setConfirmResend(booking)}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-[rgba(192,138,94,0.10)] px-3 py-1.5 text-xs font-medium text-[var(--color-bronze)] transition-colors hover:bg-[rgba(192,138,94,0.18)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {busy ? (
+                                <Loader2 size={11} className="animate-spin" strokeWidth={2.5} />
+                              ) : (
+                                <Mail size={11} strokeWidth={2.5} />
+                              )}
+                              Reenviar confirmación
+                            </button>
+                          );
+                        })()}
                         {(!booking.status || booking.status === "confirmed") && (
                           <>
                             <button
@@ -900,6 +1190,8 @@ export default function CitasPage() {
                     </div>
                   );
                 })}
+                  </div>
+                ))}
               </>
             )}
           </div>
@@ -908,6 +1200,17 @@ export default function CitasPage() {
           {!bookingsLoading && filteredBookings.length > 0 && (
             <p className="mt-4 text-right text-xs text-[var(--color-text-muted)]">
               {filteredBookings.length} {filteredBookings.length === 1 ? "cita" : "citas"}
+              {selectedIso
+                ? " · día seleccionado"
+                : rangePreset === "upcoming30"
+                ? " · próximos 30 días"
+                : rangePreset === "past30"
+                ? " · últimos 30 días"
+                : rangePreset === "thisMonth"
+                ? " · este mes"
+                : rangePreset === "nextMonth"
+                ? " · mes siguiente"
+                : " · todas"}
               {search && ` · buscando "${search}"`}
             </p>
           )}
@@ -1141,6 +1444,54 @@ export default function CitasPage() {
                     Guardar cita
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm resend patient confirmation email */}
+      {confirmResend && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirmResend(null);
+          }}
+        >
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+            <h2 className="text-base font-semibold text-slate-800">
+              Reenviar confirmación
+            </h2>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              ¿Reenviar el correo de confirmación a{" "}
+              <span className="font-medium text-slate-800">
+                {confirmResend.patient_email}
+              </span>
+              {" "}({confirmResend.patient_name})?
+            </p>
+            <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+              Máximo {STAFF_RESEND_MAX} reenvíos manuales por cita · espera ~2–3 min entre envíos.
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmResend(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={resendingId === confirmResend.id}
+                onClick={() => resendPatientConfirmation(confirmResend)}
+                className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-bronze)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-bronze-hover)] disabled:opacity-50"
+              >
+                {resendingId === confirmResend.id ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Mail size={14} />
+                )}
+                Reenviar
               </button>
             </div>
           </div>

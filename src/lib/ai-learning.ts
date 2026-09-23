@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /** Publicidad prompt / pack schema version. */
-export const PUBLICIDAD_PROMPT_VERSION = "pub-v2";
+export const PUBLICIDAD_PROMPT_VERSION = "pub-v3";
 
 /** OsteoRAG consult prompt version (clinic-side wrapper). */
 export const OSTEORAG_PROMPT_VERSION = "orag-v1";
@@ -238,7 +238,27 @@ export async function markMarketingPublished(
         row?.meta && typeof row.meta === "object"
           ? (row.meta as Record<string, unknown>)
           : {};
-      patch.meta = { ...prev, ...meta, published_at: new Date().toISOString() };
+      const channel =
+        typeof meta.channel === "string" ? meta.channel.trim() : "";
+      const prevChannels = Array.isArray(prev.published_channels)
+        ? (prev.published_channels as unknown[]).filter(
+            (c): c is string => typeof c === "string" && !!c,
+          )
+        : [];
+      const published_channels =
+        channel && !prevChannels.includes(channel)
+          ? [...prevChannels, channel]
+          : prevChannels.length
+            ? prevChannels
+            : channel
+              ? [channel]
+              : prevChannels;
+      patch.meta = {
+        ...prev,
+        ...meta,
+        published_channels,
+        published_at: new Date().toISOString(),
+      };
     }
 
     const { error } = await supabase
