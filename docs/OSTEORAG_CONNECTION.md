@@ -1,14 +1,14 @@
 # Conexión clínica ↔ OsteoRAG
 
 Documento corto para Frank y para el bot que mejora OsteoRAG.  
-Última actualización: 2026-09-23 (PT)
+Última actualización: 2026-09-23 (PT) — Phase C feedback forward
 
 ## Roles
 
 | Pieza | Rol |
 |-------|-----|
 | **katya-heras-clinica** (este repo) | Cliente: UI admin, proxy Next.js, feedback 👍/👎, Publicidad (Groq), aprendizaje ML local |
-| **OsteoRAG Worker** | Fuente de verdad del corpus RAG: embeddings, retrieval, generación citada, `/api/config` + `/api/chat` |
+| **OsteoRAG Worker** | Fuente de verdad del corpus RAG: embeddings, retrieval, generación citada, `/api/config` + `/api/chat` + opcional `/api/feedback` |
 
 La clínica **no** re-despliega para recibir mejoras del Worker. Mejora OsteoRAG → deploy Worker → la clínica ya apunta al mismo `OSTEORAG_BASE_URL`.
 
@@ -24,9 +24,10 @@ Proxies en la clínica:
 
 - `POST /api/ai/osteorag` — consulta corpus desde ficha paciente
 - `POST /api/ai/publicidad` — usa el corpus del Worker + Groq en la clínica
+- `POST /api/ai/feedback` — guarda 👍/👎 en ML local; en 👎 con títulos hace forward best-effort al Worker
 
 Default en código (si falta el env): misma URL oficial  
-(`src/app/api/ai/osteorag/route.ts`, `src/app/api/ai/publicidad/route.ts`).
+(`src/lib/osteoragClient.ts` — usado por osteorag, publicidad y feedback).
 
 ## Variables Vercel (proyecto `katya-heras-clinica`)
 
@@ -74,6 +75,36 @@ Si cambias la URL del Worker, actualiza `OSTEORAG_BASE_URL` en Production **y** 
 4. Esperar respuesta con citas + disclaimer; sin error `OSTEORAG_AUTH`.
 5. Opcional: 👍/👎 y comprobar que no rompe el flujo.
 
+## Contrato opcional — `POST /api/feedback` (Phase C)
+
+La clínica ya reenvía 👎 al Worker cuando hay títulos de fuentes/citas.  
+**El Worker puede no implementarlo aún** — la clínica degrada con gracia (log `warn`, responde `ok:true` al staff porque el save local ya ocurrió).
+
+| Campo | Valor |
+|-------|--------|
+| Path | `POST ${OSTEORAG_BASE_URL}/api/feedback` |
+| Auth | Igual que `/api/chat` (Bearer JWT / BEARER env / Basic legacy) |
+| Cuándo | Tras `applyRating` exitoso con `rating === -1` y `downvoted_titles` no vacío |
+| PII | **Nunca** `patientId`, nombres, emails, teléfonos, notas clínicas ni `output_preview` |
+
+Request body (JSON):
+
+```json
+{
+  "rating": -1,
+  "source": "publicidad" | "osteorag" | "resumen_clinico" | "feedback",
+  "topic_or_question": "...",
+  "downvoted_titles": ["title1", "..."],
+  "prompt_version": "orag-v1"
+}
+```
+
+- `topic_or_question` y `prompt_version` son opcionales.
+- Respuesta esperada: `{ "ok": true }` (u otro 2xx JSON).
+- Errores esperados mientras el bot OsteoRAG no lo implemente: **404** / **501** / red — la clínica solo hace `console.warn` y no falla el feedback del usuario.
+
+Implementación clínica: `forwardOsteoFeedback` en `src/lib/osteoragClient.ts`, llamado desde `src/app/api/ai/feedback/route.ts`.
+
 ## Handoff — bot / repo OsteoRAG
 
 Contrato que la clínica asume (no romper sin coordinar con PR en este repo):
@@ -81,7 +112,8 @@ Contrato que la clínica asume (no romper sin coordinar con PR en este repo):
 1. Mantener **`GET /api/config`** estable (200 + `supabaseUrl` / `supabaseAnonKey` cuando auth es email/password).
 2. Mantener **`POST /api/chat`** con body `{ message, folderFilter? }` y respuesta JSON `{ answer, citations }` (o `error`).
 3. Auth: Bearer JWT Supabase (y Basic solo si sigue documentado como emergencia).
-4. No exigir redeploy de la clínica para mejoras de corpus/prompts del Worker.
-5. Si cambias path, auth o forma del JSON, avisar y abrir PR coordinado en `katya-heras-clinica` (rama desde `dev`, PR a `dev`).
+4. **Opcional:** implementar **`POST /api/feedback`** (ver sección arriba) para demote de chunks con 👎; hasta entonces la clínica solo loguea warn.
+5. No exigir redeploy de la clínica para mejoras de corpus/prompts del Worker.
+6. Si cambias path, auth o forma del JSON, avisar y abrir PR coordinado en `katya-heras-clinica` (rama desde `dev`, PR a `dev`).
 
 Ver también: `docs/ROADMAP_ML.md`.
