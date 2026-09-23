@@ -79,11 +79,11 @@ UI mosaic (`ServiceDetailContent.tsx`): `grid-cols-[2fr_1fr_1fr] grid-rows-[200p
 | 02 | Light-touch hands at upper back / cranial-base area | **technique** | https://pixabay.com/photos/wellness-285589/ | Pixabay | `services/gallery-craneosacral-02.webp` |
 | 03 | Neck / upper trapezius from behind (face hidden) | **technique** | https://www.pexels.com/photo/5723190/ | Pexels | `services/gallery-craneosacral-03.webp` |
 | 04 | Upper back / cervical hands, grey hair, face-down | **technique** | https://www.pexels.com/photo/7235054/ | Pexels | `services/gallery-craneosacral-04.webp` |
-| 05 | Brain MRI sheet (clinical accessory) | **accessory** | https://www.pexels.com/photo/5723883/ | Pexels | `services/gallery-craneosacral-05.webp` |
+| 05 | Hands at upper back + sacrum (seated, posterior, no face) | **technique** | https://www.pexels.com/photo/4506109/ | Pexels | `services/gallery-craneosacral-05.webp` |
 
-**Ratio:** 4 technique + 1 accessory. Extremely strict face check — occiput/posterior only.  
-**Not reused:** hero Pexels **5794043**.  
-**Note (weak picks / scarcity):** True occiput-hold stocks without any profile are scarce on Pexels/Pixabay. 03–04 lean cervical/structural but stay face-free and clinical; replaced a candle-background candidate (6629554).
+**Ratio:** 5 technique (slot 05 replaced radiography accessory). Extremely strict face check — occiput/posterior/sacrum only.  
+**Not reused:** hero Pexels **5794043**; rejected MRI accessory Pexels **5723883**.  
+**Note:** Slot 05 was Frank-rejected brain MRI/CT film (5723883); replaced 2026-09-22 PT with sacrum/upper-back technique **4506109** (mint scrubs, bright clinical, no face). 03–04 lean cervical/structural but stay face-free; earlier candle candidate 6629554 stayed rejected.
 
 ---
 
@@ -95,11 +95,11 @@ UI mosaic (`ServiceDetailContent.tsx`): `grid-cols-[2fr_1fr_1fr] grid-rows-[200p
 | 02 | Hand near jaw / upper cervical on white towel | **technique** | https://www.pexels.com/photo/14187889/ | Pexels | `services/gallery-atm-02.webp` |
 | 03 | Hands cradling head near ear (hair hides face) | **technique** | https://pixabay.com/photos/head-650878/ | Pixabay | `services/gallery-atm-03.webp` |
 | 04 | Hand on posterior neck / cranial base from behind | **technique** | https://www.pexels.com/photo/7298881/ | Pexels | `services/gallery-atm-04.webp` |
-| 05 | Anatomical skull model (TMJ anatomy accessory) | **accessory** | https://www.pexels.com/photo/11680763/ | Pexels | `services/gallery-atm-05.webp` |
+| 05 | Hands at TMJ / ear / upper cervical (tight crop, no identifiable face) | **technique** | https://www.pexels.com/photo/6663378/ | Pexels | `services/gallery-atm-05b.webp` |
 
-**Ratio:** 4 technique + 1 accessory.  
-**Not reused:** hero Pexels **6663371** (tight jaw crop).  
-**Note (weak picks / face scarcity):** Face-free true masseter/TMJ stocks are extremely scarce. 01–02 are tight crops of jaw/ear contact; 03–04 are adjacent cranial-base/neck holds used as clinical stand-ins; 05 skull model clearly signals ATM anatomy. Prefer Katya’s real jaw/intraoral-adjacent photos when available.
+**Ratio:** 5 technique (skull accessory rejected by Frank 2026-09-22 PT — replaced with bright TMJ technique).  
+**Not reused:** hero Pexels **6663371** (tight jaw crop); rejected skull Pexels **11680763**.  
+**Note:** Face-free true masseter/TMJ stocks remain scarce. 01–04 unchanged; 05 is a tight crop of Pexels **6663378** (same shoot family as the ATM hero, different frame) focusing on hands at jaw/ear without identifiable face. Prefer Katya’s real jaw/intraoral-adjacent photos when available.
 
 ---
 
@@ -113,6 +113,7 @@ Saved under `/workspace/katya-service-photos/screenshots/` (not committed; evide
 - `gallery-osteopatia.png`
 - `gallery-craneosacral.png`
 - `gallery-atm.png`
+- `gallery-atm-v2.png` (skull replaced with TMJ technique 05b)
 
 Live URLs: `https://www.katyaheras.app/servicios/<id>`
 
