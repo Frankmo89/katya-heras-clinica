@@ -30,9 +30,13 @@
 }
 
 /* Safari/iOS shows a native play-button overlay on any <video> whose
-   autoplay gets blocked (e.g. iOS Low Power Mode) — the hero video falls
-   back to a still poster in that case (see HomeHeroSection.tsx), but this
-   hides the button outright so there's no flash of it beforehand either. */
+   autoplay gets blocked (e.g. iOS Low Power Mode). HeroVideo falls back to
+   a still poster in that case, but these rules hide the native start control
+   (and related webkit chrome) so there is no flash of a play button. */
 video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  -webkit-appearance: none;
+}
+video::-webkit-media-controls {
   display: none !important;
 }
