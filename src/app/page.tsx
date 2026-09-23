@@ -19,7 +19,7 @@ export default async function HomePage() {
       .single(),
     supabase
       .from("services")
-      .select("id, title_es, title_en, subtitle_es, subtitle_en, description_es, description_en, duration_minutes, price, tone")
+      .select("id, title_es, title_en, subtitle_es, subtitle_en, description_es, description_en, duration_minutes, price, tone, hero_image")
       .order("created_at"),
   ]);
 
