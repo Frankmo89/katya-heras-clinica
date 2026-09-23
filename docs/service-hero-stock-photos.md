@@ -12,7 +12,7 @@
 
 | Service | Source site | License | Face-free | Technique-specific | Storage public URL |
 |---|---|---|---|---|---|
-| Kinesiotaping | Pexels | Pexels License (commercial OK, attribution not required) | Pass | Pass (colorful KT tape on shoulder) | see below |
+| Kinesiotaping | Pexels | Pexels License (commercial OK, attribution not required) | Pass | Pass (KT tape on knee) | see below |
 | Masaje Relajante | Pexels | Pexels License | Pass | Pass (hands on back) | see below |
 | Masaje Tailandés | Pexels | Pexels License | Pass | Pass (leg/ankle pressure on Thai futon) | see below |
 | Osteopatía Estructural y Visceral | Pexels | Pexels License | Pass | Pass (visceral abdominal hands) | see below |
@@ -27,11 +27,12 @@ All six active services received a hero image. Crops are ~16:10 WebP (~q80), und
 
 ### 1. Kinesiotaping — `931811c6-9f4e-4781-83d1-df0569a6fb1e`
 
-- **Chosen source:** https://www.pexels.com/photo/acupuncturist-putting-red-tape-on-a-shoulder-6076123/
+- **Chosen source (v2, tone pass):** https://www.pexels.com/photo/a-person-with-kinesio-tapes-on-his-knees-6094040/
 - **Site / license:** Pexels / Pexels License — commercial use OK, attribution not required.
-- **Storage URL:** https://hlotbgirhjbnppdtllkv.supabase.co/storage/v1/object/public/service-images/services/kinesiotaping.webp
-- **Checks:** Face-free (rear/shoulder crop). Visible bright red kinesiology tape. Clinical calm, no spa props.
-- **Rejected shortlist:** Pexels 6076134 / 5794055 — faces of practitioner and/or patient clearly visible.
+- **Storage URL:** https://hlotbgirhjbnppdtllkv.supabase.co/storage/v1/object/public/service-images/services/kinesiotaping-v2.webp
+- **Checks:** Face-free. Magenta + black KT tape on knee — unmistakable. Light–medium warm skin (closer to the rest of the set / local Latino–Mestizo lean). Clean clinical white backdrop.
+- **Replaced:** Pexels 6076123 (red tape on shoulder) — patient skin was visibly much darker than the other five heroes and broke grid consistency. Old file remains as `kinesiotaping.webp` but is no longer referenced in DB.
+- **Rejected shortlist:** 6076123 (tone mismatch); 6076134 / 5794055 (faces); 6094335 (three-person studio catalog, busier); 8219160 (OK technique but purple table + lighter than preferred).
 
 ### 2. Masaje Relajante — `aa07b066-e954-40ad-a3fe-f4c09620d5a9`
 
@@ -87,6 +88,7 @@ All six active services received a hero image. Crops are ~16:10 WebP (~q80), und
 - Pillow crop ≈16:10, export WebP quality ~80, all files ≪ 5 MB (`uploadImage.ts` max).
 - Uploaded to Supabase Storage `service-images/services/{slug}.webp` (not hotlinked).
 - `hero_image` updated in production DB (CMS-driven UI — live without waiting for this PR merge).
+- **Skin-tone consistency (2026-09-22):** Reviewed the six heroes for grid consistency; prefer light–medium warm tones representative of the Tijuana/San Diego (predominantly Latino/Mestizo) patient base. Kinesiotaping swapped for that reason.
 - **Reminder:** These are **PLACEHOLDERS**. Replace with Katya’s real clinic photos when available; update or remove this log accordingly.
 
 ## License confirmations (general)
