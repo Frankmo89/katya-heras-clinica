@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { applyRating, type ClinicalSource } from "@/lib/ai-learning";
+import {
+  forwardOsteoFeedback,
+  type OsteoFeedbackSource,
+} from "@/lib/osteoragClient";
 import { requireStaffSession } from "@/lib/requireStaffSession";
 
 export const runtime = "nodejs";
@@ -7,6 +11,7 @@ export const runtime = "nodejs";
 /**
  * Route thumbs feedback to marketing vs clinical tables.
  * patient_id never goes into ML tables — audit only when clinical + patientId.
+ * On 👎 with titles, best-effort forward to OsteoRAG Worker (no PII).
  */
 export async function POST(request: Request) {
   try {
@@ -43,6 +48,10 @@ export async function POST(request: Request) {
         ? source
         : "other";
 
+    const topicOrQuestion = body.topicOrQuestion
+      ? String(body.topicOrQuestion)
+      : null;
+
     const id = await applyRating({
       domain,
       rating: rating as 1 | -1,
@@ -54,9 +63,7 @@ export async function POST(request: Request) {
       citation_titles: Array.isArray(body.citationTitles)
         ? body.citationTitles.map(String).filter(Boolean)
         : downvoted_sources,
-      topic_or_question: body.topicOrQuestion
-        ? String(body.topicOrQuestion)
-        : null,
+      topic_or_question: topicOrQuestion,
       source: clinicalSource,
       // Audit path only — never written to ML event tables
       patient_id:
@@ -74,6 +81,22 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+
+    // Phase C: demote signal → OsteoRAG Worker (optional endpoint).
+    // Never send patientId, names, emails, phones, notes, or output_preview.
+    if (rating === -1 && downvoted_sources?.length) {
+      const promptVersion = body.promptVersion
+        ? String(body.promptVersion)
+        : undefined;
+      await forwardOsteoFeedback({
+        rating: -1,
+        source: source as OsteoFeedbackSource,
+        topic_or_question: topicOrQuestion || undefined,
+        downvoted_titles: downvoted_sources,
+        prompt_version: promptVersion,
+      });
+    }
+
     return NextResponse.json({ ok: true, id });
   } catch (err) {
     console.error("feedback", err);

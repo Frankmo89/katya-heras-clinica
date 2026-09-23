@@ -2,7 +2,7 @@
 
 Documento vivo para llevar el trabajo **en orden**. Actualizar al cerrar cada fase.
 
-Última actualización: 2026-09-22 (PT)
+Última actualización: 2026-09-23 (PT)
 
 ## Norte
 
@@ -31,6 +31,7 @@ Asistente profesional para osteopatía / masaje / kinesiotape:
 | Fallback modelos Groq | `GROQ_MODEL_FALLBACK` en `ai-learning.ts` |
 | Página Insights admin | `/admin/insights` + `GET /api/ai/insights` + nav |
 | Eval 5 temas Publicidad | `docs/evals/publicidad-5-topics.md` + `scripts/eval-publicidad-diversity.mjs` |
+| Phase C: forward 👎 → Worker (sin PII) | `forwardOsteoFeedback` en `osteoragClient.ts` + `POST /api/ai/feedback`; Worker `/api/feedback` aún pendiente |
 
 ## En curso (P0 — remates)
 
@@ -40,7 +41,7 @@ Asistente profesional para osteopatía / masaje / kinesiotape:
 ## Siguiente (P1)
 
 - Insights con filtros/export
-- Demote de chunks con 👎 en OsteoRAG Worker
+- Demote de chunks con 👎 en OsteoRAG Worker (**clínica ya reenvía**; falta implementar `POST /api/feedback` + demote en el bot OsteoRAG)
 - Auth unificada clínica ↔ OsteoRAG
 - Publicidad: tonos + calendario 7 días + idea visual
 - Noticias/tendencias separadas del corpus

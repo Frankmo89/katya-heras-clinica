@@ -5,6 +5,10 @@ import {
   logMarketingEvent,
 } from "@/lib/ai-learning";
 import { toneForPreset } from "@/lib/publicidadTone";
+import {
+  getOsteoAuthHeaders,
+  invalidateOsteoAuthCache,
+} from "@/lib/osteoragClient";
 import { createClient } from "@supabase/supabase-js";
 import { requireStaffSession } from "@/lib/requireStaffSession";
 import { instagramHandleFromUrl } from "@/lib/clinicSettings";
@@ -17,59 +21,6 @@ type FolderFilter = "escuela" | "libros" | "tesis" | "all";
 function env(name: string): string {
   return String(process.env[name] ?? "").trim();
 }
-
-let cached: { token: string; expMs: number; email: string } | null = null;
-
-async function osteoBearer(base: string): Promise<string | null> {
-  const email = env("OSTEORAG_EMAIL");
-  const password = env("OSTEORAG_PASSWORD");
-  const bearerDirect = env("OSTEORAG_BEARER_TOKEN");
-  if (bearerDirect) return bearerDirect;
-  if (!email || !password) return null;
-
-  if (cached && cached.email === email && cached.expMs > Date.now() + 60_000) {
-    return cached.token;
-  }
-
-  const cfgRes = await fetch(`${base}/api/config`, {
-    headers: { Accept: "application/json", "User-Agent": "KatyaClinica/1.0" },
-    cache: "no-store",
-  });
-  if (!cfgRes.ok) return null;
-  const cfg = (await cfgRes.json()) as {
-    supabaseUrl?: string;
-    supabaseAnonKey?: string;
-  };
-  const supabaseUrl = (cfg.supabaseUrl || "").replace(/\/$/, "");
-  const anon = cfg.supabaseAnonKey || "";
-  if (!supabaseUrl || !anon) return null;
-
-  const authRes = await fetch(
-    `${supabaseUrl}/auth/v1/token?grant_type=password`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: anon,
-        Authorization: `Bearer ${anon}`,
-        "User-Agent": "KatyaClinica/1.0",
-      },
-      body: JSON.stringify({ email, password }),
-    },
-  );
-  const authJson = (await authRes.json()) as {
-    access_token?: string;
-    expires_in?: number;
-  };
-  if (!authRes.ok || !authJson.access_token) return null;
-  cached = {
-    token: authJson.access_token,
-    email,
-    expMs: Date.now() + Number(authJson.expires_in || 3600) * 1000,
-  };
-  return authJson.access_token;
-}
-
 
 type ClinicContact = {
   line: string;
@@ -125,7 +76,7 @@ async function clinicContact(): Promise<ClinicContact> {
 
 async function askCorpus(
   base: string,
-  token: string,
+  headers: Record<string, string>,
   topic: string,
   folderFilter: FolderFilter,
 ): Promise<{ answer: string; citations: unknown[] }> {
@@ -139,11 +90,7 @@ async function askCorpus(
 
   const upstream = await fetch(`${base}/api/chat`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      "User-Agent": "KatyaClinica/1.0",
-    },
+    headers,
     body: JSON.stringify({ message, folderFilter }),
   });
   const json = (await upstream.json()) as {
@@ -152,6 +99,7 @@ async function askCorpus(
     error?: string;
   };
   if (!upstream.ok) {
+    if (upstream.status === 401) invalidateOsteoAuthCache();
     throw new Error(json.error || `OsteoRAG ${upstream.status}`);
   }
   return { answer: json.answer || "", citations: json.citations || [] };
@@ -194,23 +142,24 @@ export async function POST(request: Request) {
       );
     }
 
-    // Official Worker URL — keep in sync with docs/OSTEORAG_CONNECTION.md
-    // and Vercel OSTEORAG_BASE_URL (Production + Preview).
-    const base = (
-      env("OSTEORAG_BASE_URL") || "https://osteorag.alonsosky617.workers.dev"
-    ).replace(/\/$/, "");
-    const token = await osteoBearer(base);
-    if (!token) {
+    const auth = await getOsteoAuthHeaders();
+    if (!auth.ok) {
       return NextResponse.json(
         {
           error:
+            auth.error ||
             "OsteoRAG no configurado (OSTEORAG_EMAIL + OSTEORAG_PASSWORD).",
         },
-        { status: 503 },
+        { status: auth.status === 401 ? 401 : 503 },
       );
     }
 
-    const corpus = await askCorpus(base, token, topic, folderFilter);
+    const corpus = await askCorpus(
+      auth.base,
+      auth.headers,
+      topic,
+      folderFilter,
+    );
     const contact = await clinicContact();
 
     const ctaRules = contact.hasContact
