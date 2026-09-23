@@ -194,6 +194,8 @@ export async function POST(request: Request) {
       );
     }
 
+    // Official Worker URL — keep in sync with docs/OSTEORAG_CONNECTION.md
+    // and Vercel OSTEORAG_BASE_URL (Production + Preview).
     const base = (
       env("OSTEORAG_BASE_URL") || "https://osteorag.alonsosky617.workers.dev"
     ).replace(/\/$/, "");
