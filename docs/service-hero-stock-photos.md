@@ -1,7 +1,7 @@
 # Service hero stock photos (placeholders)
 
 **Status:** PLACEHOLDER images until Katya provides real clinic photos.  
-**Date:** 2026-09-22 (PT)  
+**Date:** 2026-09-22 (PT); Thai hero replaced same day after review  
 **Branch intent:** `feat/service-hero-stock-photos` → `dev` only (never `master`).  
 **Storage:** Supabase bucket `service-images` / folder `services` (public URLs).  
 **License rule:** Unsplash / Pexels / Pixabay only. All three licenses allow commercial use and do **not** require attribution (attribution appreciated but not required).
@@ -14,7 +14,7 @@
 |---|---|---|---|---|---|
 | Kinesiotaping | Pexels | Pexels License (commercial OK, attribution not required) | Pass | Pass (colorful KT tape on shoulder) | see below |
 | Masaje Relajante | Pexels | Pexels License | Pass | Pass (hands on back) | see below |
-| Masaje Tailandés | Pexels | Pexels License | Pass | Pass (Thai herbal compress / Luk Pra Kob) | see below |
+| Masaje Tailandés | Pexels | Pexels License | Pass | Pass (leg/ankle pressure on Thai futon) | see below |
 | Osteopatía Estructural y Visceral | Pexels | Pexels License | Pass | Pass (visceral abdominal hands) | see below |
 | Terapia Craneosacral | Pexels | Pexels License | Pass | Pass (hands on skull / occiput, patient prone) | see below |
 | Terapia ATM | Pexels | Pexels License | Pass (tight jaw/neck crop; eyes/nose/mouth out) | Pass (hands on mandibular / TMJ region) | see below |
@@ -43,12 +43,13 @@ All six active services received a hero image. Crops are ~16:10 WebP (~q80), und
 
 ### 3. Masaje Tailandés — `2709217b-12f0-4ada-95ec-fec7c73b2510`
 
-- **Chosen source:** https://www.pexels.com/photo/woman-in-red-shirt-making-thai-massage-6187421/
+- **Chosen source (v2, 2026-09-22 review):** https://www.pexels.com/photo/traditional-thai-massage-leg-therapy-session-34927635/
 - **Site / license:** Pexels / Pexels License — commercial use OK, attribution not required.
-- **Storage URL:** https://hlotbgirhjbnppdtllkv.supabase.co/storage/v1/object/public/service-images/services/masaje-tailandes.webp
-- **Checks:** Face-free. Technique = traditional Thai herbal compress (Luk Pra Kob). Not a generic spa reuse of the relaxing-massage photo.
-- **Note:** Ideal clothed assisted-stretch / elbow-foot pressure shots with **no** identifiable faces were scarce; most Thai stretch results showed practitioner faces. Herbal compress is an accepted Thai-specific modality used as placeholder.
-- **Rejected shortlist:** Pexels 4599425, 6186750, 6188042, 6188120 — visible faces; Pixabay storefront / lifestyle misses.
+- **Storage URL:** https://hlotbgirhjbnppdtllkv.supabase.co/storage/v1/object/public/service-images/services/masaje-tailandes-v2.webp
+- **Checks:** Face-free. Therapist hands applying pressure to client's calf/ankle on a floor futon; client in traditional loose white Thai pants — immediately readable as Thai massage (not bandage/injury).
+- **Replaced:** Pexels 6187421 herbal compress (Luk Pra Kob) — too ambiguous for unfamiliar viewers (could read as gauze/bandage). Old file kept in Storage as `masaje-tailandes.webp` but no longer referenced in DB.
+- **Alt shortlist kept:** Pexels 5793898 (foot/ankle pressure on table) — also face-free; preferred 34927635 for clearer Thai-futon context.
+- **Rejected shortlist:** Pexels 4599425, 6186750, 6188042, 6188120, 6187421 — faces and/or ambiguous compress.
 
 ### 4. Osteopatía Estructural y Visceral — `d6926cc7-91fe-4c32-af5e-529e973f8e7d`
 
@@ -65,6 +66,7 @@ All six active services received a hero image. Crops are ~16:10 WebP (~q80), und
 - **Site / license:** Pexels / Pexels License — commercial use OK, attribution not required.
 - **Storage URL:** https://hlotbgirhjbnppdtllkv.supabase.co/storage/v1/object/public/service-images/services/terapia-craneosacral.webp
 - **Checks:** Hands gently on skull/occiput; patient prone; face not identifiable; clinical pastel setting (no candles).
+- **2026-09-22 re-check:** Top-down crown/occiput framing — **zero** visible face or profile (no eyes/ears/nose/mouth).
 - **Rejected shortlist:** Pexels 6629549 — patient face + candles; 5794044 — practitioner face unless extreme crop loses technique; 5659011 / 6663371 — patient face/profile.
 
 ### 6. Terapia de Articulación Temporomandibular (ATM) — `7d9aa20c-caad-4c02-9edd-4560581a391d`
@@ -73,6 +75,7 @@ All six active services received a hero image. Crops are ~16:10 WebP (~q80), und
 - **Site / license:** Pexels / Pexels License — commercial use OK, attribution not required.
 - **Storage URL:** https://hlotbgirhjbnppdtllkv.supabase.co/storage/v1/object/public/service-images/services/terapia-atm.webp
 - **Checks:** Tight 16:10 crop on jaw / mandibular region + practitioner hands; eyes, nose, and mouth excluded so the person is not identifiable. Clinical calm.
+- **2026-09-22 re-check:** Confirmed jaw/TMJ-specific — ear + jawline with hand contact just below/behind the earlobe (TMJ area), **not** a generic neck/shoulder shot. Clearer masseter-only stocks either showed faces or were not available on Pexels/Unsplash/Pixabay without identifiable features.
 - **Rejected shortlist:** Pexels 4506167 / 4506216 / 6663377 / 14187889 — identifiable faces; looser crop of 6663371 showed a closed eye and was discarded.
 
 ---
