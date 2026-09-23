@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Inter } from "next/font/google";
-import { SiteFooter } from "@/components/ui/SiteFooter";
-import { SiteHeader } from "@/components/ui/SiteHeader";
 import { ClientProviders } from "@/components/providers/ClientProviders";
+import { SiteChrome } from "@/components/layout/SiteChrome";
 import "./globals.css";
 
 const cormorantGaramond = Cormorant_Garamond({
@@ -52,9 +51,7 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col bg-[#F8FAFC] text-[#1E293B] font-sans">
         <ClientProviders>
-          <SiteHeader />
-          <main className="flex flex-col flex-1">{children}</main>
-          <SiteFooter />
+          <SiteChrome>{children}</SiteChrome>
         </ClientProviders>
       </body>
     </html>
