@@ -4,6 +4,10 @@ import {
   logClinicalAudit,
   logClinicalEvent,
 } from "@/lib/ai-learning";
+import {
+  getOsteoAuthHeaders,
+  invalidateOsteoAuthCache,
+} from "@/lib/osteoragClient";
 import { requireStaffSession } from "@/lib/requireStaffSession";
 
 export const runtime = "nodejs";
@@ -15,132 +19,6 @@ interface Citation {
   page: number | null;
   source_folder: string;
   excerpt: string;
-}
-
-/** Simple in-memory token cache (warm serverless instances). */
-let cached: { token: string; expMs: number; email: string } | null = null;
-
-function env(name: string): string {
-  // Dynamic key access — avoid build-time inlining of missing secrets
-  return String(process.env[name] ?? "").trim();
-}
-
-/** Server-side only — never include in client JSON responses. */
-function logEnvPresence() {
-  console.warn("osteorag env presence", {
-    OSTEORAG_EMAIL: Boolean(env("OSTEORAG_EMAIL")),
-    OSTEORAG_PASSWORD: Boolean(env("OSTEORAG_PASSWORD")),
-    OSTEORAG_BEARER_TOKEN: Boolean(env("OSTEORAG_BEARER_TOKEN")),
-    OSTEORAG_BASIC_USER: Boolean(env("OSTEORAG_BASIC_USER")),
-    OSTEORAG_BASIC_PASS: Boolean(env("OSTEORAG_BASIC_PASS")),
-    OSTEORAG_BASE_URL: Boolean(env("OSTEORAG_BASE_URL")),
-  });
-}
-
-async function getOsteoBearer(base: string): Promise<
-  | { ok: true; token: string }
-  | { ok: false; error: string; status: number }
-> {
-  const email = env("OSTEORAG_EMAIL");
-  const password = env("OSTEORAG_PASSWORD");
-  const bearerDirect = env("OSTEORAG_BEARER_TOKEN");
-  const basicUser = env("OSTEORAG_BASIC_USER");
-  const basicPass = env("OSTEORAG_BASIC_PASS");
-
-  if (bearerDirect) return { ok: true, token: bearerDirect };
-
-  if (email && password) {
-    if (
-      cached &&
-      cached.email === email &&
-      cached.expMs > Date.now() + 60_000
-    ) {
-      return { ok: true, token: cached.token };
-    }
-
-    const cfgRes = await fetch(`${base}/api/config`, {
-      headers: { Accept: "application/json", "User-Agent": "KatyaClinica/1.0" },
-      cache: "no-store",
-    });
-    if (!cfgRes.ok) {
-      logEnvPresence();
-      return {
-        ok: false,
-        error: `No pude leer /api/config de OsteoRAG (${cfgRes.status}).`,
-        status: 502,
-      };
-    }
-    const cfg = (await cfgRes.json()) as {
-      supabaseUrl?: string;
-      supabaseAnonKey?: string;
-    };
-    const supabaseUrl = (cfg.supabaseUrl || "").replace(/\/$/, "");
-    const anon = cfg.supabaseAnonKey || "";
-    if (!supabaseUrl || !anon) {
-      logEnvPresence();
-      return {
-        ok: false,
-        error: "OsteoRAG /api/config no devolvió supabaseUrl/anon key.",
-        status: 502,
-      };
-    }
-
-    const authRes = await fetch(
-      `${supabaseUrl}/auth/v1/token?grant_type=password`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: anon,
-          Authorization: `Bearer ${anon}`,
-          "User-Agent": "KatyaClinica/1.0",
-        },
-        body: JSON.stringify({ email, password }),
-      },
-    );
-    const authJson = (await authRes.json()) as {
-      access_token?: string;
-      expires_in?: number;
-      error_description?: string;
-      msg?: string;
-      error?: string;
-    };
-    if (!authRes.ok || !authJson.access_token) {
-      logEnvPresence();
-      return {
-        ok: false,
-        error:
-          authJson.error_description ||
-          authJson.msg ||
-          authJson.error ||
-          "Login OsteoRAG falló (email/password).",
-        status: 401,
-      };
-    }
-
-    const expiresIn = Number(authJson.expires_in || 3600);
-    cached = {
-      token: authJson.access_token,
-      email,
-      expMs: Date.now() + expiresIn * 1000,
-    };
-    return { ok: true, token: authJson.access_token };
-  }
-
-  if (basicUser && basicPass) {
-    return {
-      ok: true,
-      token: `basic:${Buffer.from(`${basicUser}:${basicPass}`).toString("base64")}`,
-    };
-  }
-
-  logEnvPresence();
-  return {
-    ok: false,
-    error:
-      "OsteoRAG no está configurado. En Vercel pon OSTEORAG_EMAIL + OSTEORAG_PASSWORD (login de OsteoRAG).",
-    status: 503,
-  };
 }
 
 export async function POST(request: Request) {
@@ -162,13 +40,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Pregunta demasiado larga." }, { status: 400 });
     }
 
-    // Official Worker URL — keep in sync with docs/OSTEORAG_CONNECTION.md
-    // and Vercel OSTEORAG_BASE_URL (Production + Preview).
-    const base = (
-      env("OSTEORAG_BASE_URL") || "https://osteorag.alonsosky617.workers.dev"
-    ).replace(/\/$/, "");
-
-    const auth = await getOsteoBearer(base);
+    const auth = await getOsteoAuthHeaders();
     if (!auth.ok) {
       // Security: never return env key presence (`present`) to the client.
       return NextResponse.json(
@@ -179,16 +51,7 @@ export async function POST(request: Request) {
         { status: auth.status },
       );
     }
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "User-Agent": "KatyaClinica/1.0",
-    };
-    if (auth.token.startsWith("basic:")) {
-      headers.Authorization = `Basic ${auth.token.slice("basic:".length)}`;
-    } else {
-      headers.Authorization = `Bearer ${auth.token}`;
-    }
+    const { base, headers } = auth;
 
     // Only clinical context goes to the external corpus service — never the
     // patient's name (or email/phone).
@@ -221,7 +84,7 @@ export async function POST(request: Request) {
     }
 
     if (!upstream.ok) {
-      if (upstream.status === 401) cached = null;
+      if (upstream.status === 401) invalidateOsteoAuthCache();
       return NextResponse.json(
         { error: json.error || `OsteoRAG error ${upstream.status}` },
         { status: upstream.status === 401 ? 401 : 502 },
