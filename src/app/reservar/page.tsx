@@ -787,10 +787,7 @@ function ReservarPageContent() {
                     {clinicInfo.physical_address}
                   </p>
                   <a
-                    href={
-                      clinicInfo.maps_url.trim() ||
-                      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(clinicInfo.physical_address)}`
-                    }
+                    href={resolveMapsHref(clinicInfo.maps_url, clinicInfo.physical_address)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-1 inline-flex items-center gap-1.5 text-[13px] tracking-[0.04em] text-[var(--color-bronze)] transition-colors hover:text-[var(--color-bronze-hover)]"
@@ -962,6 +959,15 @@ function ReservarPageContent() {
     </div>
   );
 }
+
+/** Prefer a real http(s) Maps URL; fall back to a Google search for the address.
+ *  clinic_settings.maps_url sometimes holds a raw street address (not a URL). */
+function resolveMapsHref(mapsUrl: string, address: string): string {
+  const trimmed = (mapsUrl ?? "").trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || trimmed)}`;
+}
+
 
 export default function ReservarPage() {
   return (

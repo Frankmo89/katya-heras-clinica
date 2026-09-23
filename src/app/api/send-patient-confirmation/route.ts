@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { resendFromAddress } from "@/lib/emailFrom";
 
 if (!process.env.RESEND_API_KEY) {
   console.warn(
@@ -295,13 +296,19 @@ export async function POST(request: NextRequest) {
 
     if (!svc || !settings) {
       console.error("[send-patient-confirmation] Missing service or clinic_settings row for", bookingId);
+      await supabase
+        .from("bookings")
+        .update({ patient_email_sent_at: null })
+        .eq("id", bookingId)
+        .eq("booking_ref", bookingRef);
       return NextResponse.json({ sent: false });
     }
 
     const serviceName = (lang === "es" ? svc.title_es : svc.title_en) ?? svc.title_es;
-    const mapsUrl =
-      (settings.maps_url ?? "").trim() ||
-      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(settings.physical_address)}`;
+    const rawMaps = (settings.maps_url ?? "").trim();
+    const mapsUrl = /^https?:\/\//i.test(rawMaps)
+      ? rawMaps
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(settings.physical_address || rawMaps)}`;
 
     const emailData: EmailData = {
       lang,
@@ -318,21 +325,36 @@ export async function POST(request: NextRequest) {
     };
 
     const { error } = await resend.emails.send({
-      from:    "Clinica Katya Heras <onboarding@resend.dev>",
+      from:    resendFromAddress(),
       to:      [claimed.patient_email],
       subject: COPY[lang].subject(bookingRef),
       html:    buildHtml(emailData),
     });
 
     if (error) {
+      // Claim ran before the send so a crashed/aborted request cannot
+      // double-mail. On a definitive Resend rejection we release the claim
+      // so a later retry (or a from-address fix) can try again.
       console.error("[send-patient-confirmation] Resend error:", JSON.stringify(error));
-      return NextResponse.json({ sent: false });
+      await supabase
+        .from("bookings")
+        .update({ patient_email_sent_at: null })
+        .eq("id", bookingId)
+        .eq("booking_ref", bookingRef);
+      return NextResponse.json({ sent: false, error: "resend_failed" });
     }
 
     console.log(`[send-patient-confirmation] Sent to booking ${bookingId} (${bookingRef})`);
     return NextResponse.json({ sent: true });
   } catch (err) {
     console.error("[send-patient-confirmation] Unexpected error:", err);
+    try {
+      await supabase
+        .from("bookings")
+        .update({ patient_email_sent_at: null })
+        .eq("id", bookingId)
+        .eq("booking_ref", bookingRef);
+    } catch { /* best-effort release */ }
     return NextResponse.json({ sent: false });
   }
 }

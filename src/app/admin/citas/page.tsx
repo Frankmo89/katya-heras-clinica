@@ -21,6 +21,40 @@ function dateToIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+
+/** Add (or subtract) whole days from an ISO YYYY-MM-DD date string. */
+function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return dateToIso(dt);
+}
+
+type RangePreset = "upcoming30" | "past30" | "thisMonth" | "nextMonth" | "all";
+
+function rangeBoundsFor(preset: RangePreset): { from: string | null; to: string | null } {
+  const today = getTodayIso();
+  const now = new Date();
+  if (preset === "upcoming30") return { from: today, to: addDaysIso(today, 30) };
+  if (preset === "past30") return { from: addDaysIso(today, -30), to: today };
+  if (preset === "thisMonth") {
+    const from = dateToIso(new Date(now.getFullYear(), now.getMonth(), 1));
+    const to = dateToIso(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+    return { from, to };
+  }
+  if (preset === "nextMonth") {
+    const from = dateToIso(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+    const to = dateToIso(new Date(now.getFullYear(), now.getMonth() + 2, 0));
+    return { from, to };
+  }
+  return { from: null, to: null };
+}
+
+function monthHeading(yyyyMm: string): string {
+  const [y, m] = yyyyMm.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+}
+
+
 /**
  * Converts a "YYYY-MM-DD" + "HH:MM" pair, understood as Tijuana wall-clock
  * time, to the equivalent UTC ISO instant — independent of the admin's own
@@ -182,6 +216,8 @@ export default function CitasPage() {
   const [bookings,        setBookings]        = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
   const [search,          setSearch]          = useState("");
+  // Default list: today → +30 days. Calendar day-pick still overrides.
+  const [rangePreset,     setRangePreset]     = useState<RangePreset>("upcoming30");
 
   // Services catalog — same "services" table /servicios and /reservar read from.
   const [services, setServices] = useState<Service[]>([]);
@@ -421,15 +457,34 @@ export default function CitasPage() {
       : [];
 
   const selectedIso = selectedDate ? dateToIso(selectedDate) : null;
+  const rangeBounds = rangeBoundsFor(rangePreset);
 
-  const filteredBookings = (bookings ?? []).filter(
-    (b) =>
-      (selectedIso === null || b.date === selectedIso) &&
-      (
-        search.trim() === "" ||
-        (b.patient_name?.toLowerCase() ?? "").includes(search.toLowerCase().trim())
-      )
-  );
+  const filteredBookings = (bookings ?? []).filter((b) => {
+    const matchesSearch =
+      search.trim() === "" ||
+      (b.patient_name?.toLowerCase() ?? "").includes(search.toLowerCase().trim());
+    if (!matchesSearch) return false;
+    // A picked calendar day wins over the range preset.
+    if (selectedIso !== null) return b.date === selectedIso;
+    if (rangeBounds.from && b.date < rangeBounds.from) return false;
+    if (rangeBounds.to && b.date > rangeBounds.to) return false;
+    return true;
+  });
+
+  /** Group filtered bookings by YYYY-MM for phone-friendly month sections. */
+  const bookingsByMonth: { key: string; label: string; items: Booking[] }[] = [];
+  {
+    const map = new Map<string, Booking[]>();
+    for (const b of filteredBookings) {
+      const key = b.date.slice(0, 7);
+      const list = map.get(key);
+      if (list) list.push(b);
+      else map.set(key, [b]);
+    }
+    for (const [key, items] of map) {
+      bookingsByMonth.push({ key, label: monthHeading(key), items });
+    }
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
@@ -471,9 +526,9 @@ export default function CitasPage() {
             }`}
           >
             {tab === "agenda" ? "Agenda y Disponibilidad" : "Citas Próximas"}
-            {tab === "citas" && !bookingsLoading && bookings.length > 0 && (
+            {tab === "citas" && !bookingsLoading && filteredBookings.length > 0 && (
               <span className="ml-2 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-[rgba(192,138,94,0.15)] text-[var(--color-bronze)] text-[10px] font-semibold">
-                {bookings.length}
+                {filteredBookings.length}
               </span>
             )}
           </button>
@@ -711,6 +766,36 @@ export default function CitasPage() {
             );
           })()}
 
+          {/* Range presets — default upcoming 30 days */}
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(
+              [
+                ["upcoming30", "Próximos 30 días"],
+                ["past30", "Últimos 30 días"],
+                ["thisMonth", "Este mes"],
+                ["nextMonth", "Mes siguiente"],
+                ["all", "Todas"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setRangePreset(id);
+                  setSelectedDate(null);
+                  if (todayFilter) router.replace("/admin/citas");
+                }}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                  rangePreset === id && !selectedIso
+                    ? "bg-[var(--color-bronze)] text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* Toolbar */}
           <div className="mb-6 flex flex-wrap items-center gap-3">
             {/* Search */}
@@ -757,14 +842,20 @@ export default function CitasPage() {
                   <CalendarDays size={24} className="text-[var(--color-bronze)]" strokeWidth={1.5} />
                 </div>
                 <p className="mb-1 text-sm font-medium text-slate-700">
-                  {search ? "Sin resultados" : selectedIso ? "Sin citas este día" : "No hay citas"}
+                  {search
+                    ? "Sin resultados"
+                    : selectedIso
+                    ? "Sin citas este día"
+                    : rangePreset === "upcoming30"
+                    ? "Sin citas en los próximos 30 días"
+                    : "No hay citas en este rango"}
                 </p>
                 <p className="max-w-xs text-xs leading-relaxed text-[var(--color-text-muted)]">
                   {search
                     ? `No se encontraron citas para "${search}".`
                     : selectedIso
                     ? "No hay citas programadas para este día."
-                    : "Las reservas de las pacientes aparecerán aquí."}
+                    : "Prueba otro rango o crea una cita manual."}
                 </p>
               </div>
             ) : (
@@ -779,7 +870,17 @@ export default function CitasPage() {
                   <span>Acciones</span>
                 </div>
 
-                {filteredBookings.map((booking, idx) => {
+                {bookingsByMonth.map((group) => (
+                  <div key={group.key}>
+                    <div className="sticky top-0 z-[1] border-b border-slate-100 bg-[rgba(248,250,252,0.96)] px-6 py-2.5 backdrop-blur-sm">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-bronze)] capitalize">
+                        {group.label}
+                        <span className="ml-2 font-normal normal-case tracking-normal text-slate-400">
+                          {group.items.length} {group.items.length === 1 ? "cita" : "citas"}
+                        </span>
+                      </p>
+                    </div>
+                    {group.items.map((booking, idx) => {
                   const svcName =
                     services.find((s) => s.id === booking.service_id)?.es.name ??
                     booking.service_id;
@@ -787,7 +888,7 @@ export default function CitasPage() {
                     <div
                       key={booking.id}
                       className={`flex flex-col lg:grid lg:grid-cols-[88px_1fr_160px_36px_108px_auto] lg:items-center gap-3 lg:gap-4 px-6 py-5 ${
-                        idx !== filteredBookings.length - 1 ? "border-b border-slate-50" : ""
+                        idx !== group.items.length - 1 ? "border-b border-slate-50" : ""
                       }`}
                     >
                       {/* Date + time */}
@@ -900,6 +1001,8 @@ export default function CitasPage() {
                     </div>
                   );
                 })}
+                  </div>
+                ))}
               </>
             )}
           </div>
@@ -908,6 +1011,17 @@ export default function CitasPage() {
           {!bookingsLoading && filteredBookings.length > 0 && (
             <p className="mt-4 text-right text-xs text-[var(--color-text-muted)]">
               {filteredBookings.length} {filteredBookings.length === 1 ? "cita" : "citas"}
+              {selectedIso
+                ? " · día seleccionado"
+                : rangePreset === "upcoming30"
+                ? " · próximos 30 días"
+                : rangePreset === "past30"
+                ? " · últimos 30 días"
+                : rangePreset === "thisMonth"
+                ? " · este mes"
+                : rangePreset === "nextMonth"
+                ? " · mes siguiente"
+                : " · todas"}
               {search && ` · buscando "${search}"`}
             </p>
           )}

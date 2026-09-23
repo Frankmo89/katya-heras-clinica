@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
+import { resendFromAddress } from "@/lib/emailFrom";
 
 if (!process.env.RESEND_API_KEY) {
   console.warn(
@@ -234,6 +235,11 @@ export async function POST(request: NextRequest) {
     const clinicEmail = settings?.contact_email;
     if (!clinicEmail) {
       console.error("[send-booking-notification] No contact_email on file — cannot send.");
+      await supabase
+        .from("bookings")
+        .update({ [claimColumn]: null })
+        .eq("id", bookingId)
+        .eq("booking_ref", bookingRef);
       return NextResponse.json({ sent: false });
     }
 
@@ -264,7 +270,7 @@ export async function POST(request: NextRequest) {
     };
 
     const { error } = await resend.emails.send({
-      from:    "Clinica Katya Heras <onboarding@resend.dev>",
+      from:    resendFromAddress(),
       to:      [clinicEmail],
       subject: ACTION_CONFIG[actionType].subject(claimed.patient_name),
       html:    buildHtml(emailData),
@@ -272,13 +278,25 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("[send-booking-notification] Resend error:", JSON.stringify(error));
-      return NextResponse.json({ sent: false });
+      await supabase
+        .from("bookings")
+        .update({ [claimColumn]: null })
+        .eq("id", bookingId)
+        .eq("booking_ref", bookingRef);
+      return NextResponse.json({ sent: false, error: "resend_failed" });
     }
 
     console.log(`[send-booking-notification] Email (${actionType}) sent for booking ${bookingId} (${bookingRef})`);
     return NextResponse.json({ sent: true });
   } catch (err) {
     console.error("[send-booking-notification] Unexpected error:", err);
+    try {
+      await supabase
+        .from("bookings")
+        .update({ [claimColumn]: null })
+        .eq("id", bookingId)
+        .eq("booking_ref", bookingRef);
+    } catch { /* best-effort release */ }
     return NextResponse.json({ sent: false });
   }
 }
