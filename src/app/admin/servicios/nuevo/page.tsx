@@ -137,7 +137,10 @@ export default function NuevoServicioPage() {
         faqs:             cleanFaqs.length     > 0 ? cleanFaqs     : null,
       });
 
-      if (dbError) throw new Error(dbError.message);
+      if (dbError) {
+        console.error("[servicios/nuevo] services insert failed", dbError);
+        throw new Error(dbError.message);
+      }
 
       revalidatePublic();
       setSaved(true);
