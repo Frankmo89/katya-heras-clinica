@@ -26,10 +26,10 @@ const COPY = {
   },
 } as const;
 
-/** Phase 1 placeholders under public/hero/ — replaced in Phase 2 when Frank supplies the final clip.
- *  See public/hero/README.md for H.264 size/resolution targets. */
-const PLACEHOLDER_POSTER = "/hero/hero-poster.webp";
-const PLACEHOLDER_SOURCES: HeroVideoSource[] = [
+/** Fase 2 assets under public/hero/ (clip 01): mobile native vertical + desktop style-B blur.
+ *  See public/hero/README.md for trim/encode notes and size targets. */
+const HERO_POSTER = "/hero/hero-poster.webp";
+const HERO_SOURCES: HeroVideoSource[] = [
   {
     src: "/hero/hero-mobile.mp4",
     media: "(max-width: 767px)",
@@ -60,12 +60,12 @@ export function HomeHeroSection({
   const { lang } = useLanguage();
   const c = COPY[lang];
 
-  const posterSrc = (heroImageUrl && heroImageUrl.trim()) || PLACEHOLDER_POSTER;
-  // Optional single override (env / CMS) — otherwise multi-resolution placeholders
+  const posterSrc = (heroImageUrl && heroImageUrl.trim()) || HERO_POSTER;
+  // Optional single override (env / CMS) — otherwise multi-resolution hero assets
   const override = heroVideoUrl?.trim();
   const sources: HeroVideoSource[] = override
     ? [{ src: override, type: "video/mp4" }]
-    : PLACEHOLDER_SOURCES;
+    : HERO_SOURCES;
 
   return (
     /* Breathing room under sticky nav pill (~72px) — Mobbin-style air */
