@@ -1,8 +1,15 @@
 "use client";
 
 import { Button } from "@/components/ui/Button";
-import { ArrowRight, Clock, MapPin } from "lucide-react";
+import { ArrowRight, Clock, MapPin, MessageCircle } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useClinicSettings } from "@/context/ClinicSettingsContext";
+import { formatScheduleLines } from "@/lib/clinicSchedule";
+import {
+  buildWhatsAppHref,
+  resolveMapsUrl,
+  WHATSAPP_PREFILL,
+} from "@/lib/clinicSettings";
 
 const COPY = {
   es: {
@@ -19,8 +26,12 @@ const COPY = {
     locationLabel: "San Diego \u2194 Tecate",
     locationH3:    "Cómo llegar.",
     locationDesc:  "A pocos minutos de la garita de Tecate. Estacionamiento privado y acceso peatonal directo.",
-    hours:         "Lun\u2013Vie 09:00\u201318:00 · Sáb 10:00\u201314:00",
+    hoursFallback: "Consulta horario en la clínica",
     cta:           "Reservar una sesión",
+    ctaMaps:       "Cómo llegar",
+    ctaWa:         "WhatsApp",
+    ariaMaps:      "Abrir Google Maps con la dirección de la clínica",
+    ariaWa:        "Escribir por WhatsApp para agendar",
     locationAlt:   "Cómo llegar",
   },
   en: {
@@ -37,8 +48,12 @@ const COPY = {
     locationLabel: "San Diego \u2194 Tecate",
     locationH3:    "How to get here.",
     locationDesc:  "A few minutes from the Tecate border crossing. Private parking and direct pedestrian access.",
-    hours:         "Mon\u2013Fri 09:00\u201318:00 · Sat 10:00\u201314:00",
+    hoursFallback: "Check hours with the clinic",
     cta:           "Book a session",
+    ctaMaps:       "Get directions",
+    ctaWa:         "WhatsApp",
+    ariaMaps:      "Open Google Maps with the clinic address",
+    ariaWa:        "Message on WhatsApp to book",
     locationAlt:   "How to get here",
   },
 };
@@ -61,7 +76,14 @@ export function NosotrosContent({
   locationImageUrl,
 }: NosotrosContentProps) {
   const { lang } = useLanguage();
+  const { settings, weeklySchedule, loading } = useClinicSettings();
   const c = COPY[lang];
+  const scheduleLines = formatScheduleLines(weeklySchedule, lang);
+  const mapsHref = resolveMapsUrl(settings.maps_url, settings.physical_address);
+  const waHref = buildWhatsAppHref(
+    settings.whatsapp_number,
+    WHATSAPP_PREFILL[lang],
+  );
 
   return (
     <div className="pt-[72px] pb-0">
@@ -154,23 +176,69 @@ export function NosotrosContent({
             </p>
 
             <ul className="mb-8 flex flex-col gap-3.5 text-sm text-[var(--color-text)]">
-              <li className="flex items-center gap-3">
-                <MapPin size={16} className="shrink-0 text-[var(--color-bronze)]" strokeWidth={1.5} />
-                Av. Hidalgo 142, Tecate, BC
+              <li className="flex items-start gap-3">
+                <MapPin size={16} className="mt-0.5 shrink-0 text-[var(--color-bronze)]" strokeWidth={1.5} />
+                {loading ? (
+                  <span className="inline-block h-4 w-56 animate-pulse rounded bg-slate-200" />
+                ) : (
+                  <a
+                    href={mapsHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="transition-colors hover:text-[var(--color-bronze)]"
+                  >
+                    {settings.physical_address}
+                  </a>
+                )}
               </li>
-              <li className="flex items-center gap-3">
-                <Clock size={16} className="shrink-0 text-[var(--color-bronze)]" strokeWidth={1.5} />
-                {c.hours}
+              <li className="flex items-start gap-3">
+                <Clock size={16} className="mt-0.5 shrink-0 text-[var(--color-bronze)]" strokeWidth={1.5} />
+                {loading ? (
+                  <span className="inline-block h-4 w-48 animate-pulse rounded bg-slate-200" />
+                ) : scheduleLines.length > 0 ? (
+                  <span>
+                    {scheduleLines.map((line, i) => (
+                      <span key={line}>
+                        {line}
+                        {i < scheduleLines.length - 1 && <br />}
+                      </span>
+                    ))}
+                  </span>
+                ) : (
+                  <span className="text-[var(--color-text)]/50">{c.hoursFallback}</span>
+                )}
               </li>
             </ul>
 
-            <Button
-              variant="primary"
-              href="/reservar"
-              icon={<ArrowRight size={14} strokeWidth={1.5} />}
-            >
-              {c.cta}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="primary"
+                href="/reservar"
+                icon={<ArrowRight size={14} strokeWidth={1.5} />}
+              >
+                {c.cta}
+              </Button>
+              <Button
+                variant="secondary"
+                href={mapsHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={c.ariaMaps}
+              >
+                {c.ctaMaps}
+              </Button>
+              <Button
+                variant="ghost"
+                href={waHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={c.ariaWa}
+                icon={<MessageCircle size={14} strokeWidth={1.5} />}
+                className="border border-[var(--color-text)]/10"
+              >
+                {c.ctaWa}
+              </Button>
+            </div>
           </div>
 
           {locationImageUrl ? (

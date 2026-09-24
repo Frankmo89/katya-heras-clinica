@@ -41,10 +41,10 @@ export type ClinicSettings = {
 /** Safe fallback shown while the DB fetch is in-flight or if it fails. */
 export const CLINIC_SETTINGS_DEFAULTS: ClinicSettings = {
   id: 1,
-  whatsapp_number: "+52 664 000 0000",
+  whatsapp_number: "+52 6651043221",
   contact_email: "katyamheras@gmail.com",
-  physical_address: "Av. Hidalgo 142, Tecate, BC",
-  maps_url: "https://maps.google.com/?q=Av+Hidalgo+142+Tecate+BC",
+  physical_address: "C. Campeche 663, Braulio Maldonado, 21460 Tecate, B.C.",
+  maps_url: "C. Campeche 663, Braulio Maldonado, 21460 Tecate, B.C.",
   instagram_url: null,
   facebook_url: null,
   instructions_pre_appointment: "Ropa cómoda y elástica\nEstudios médicos previos si los tienes\nUna botella de agua\nDiez minutos de margen para llegar sin prisa",
@@ -103,3 +103,61 @@ export function instagramHandleFromUrl(
   }
   return null;
 }
+
+
+/** Canonical public site origin (production). */
+export const SITE_ORIGIN = "https://www.katyaheras.app";
+
+/**
+ * Prefer a real http(s) Maps URL; fall back to a Google Maps search for the
+ * address. clinic_settings.maps_url sometimes holds a raw street address.
+ */
+export function resolveMapsUrl(
+  mapsUrl: string | null | undefined,
+  physicalAddress: string | null | undefined,
+): string {
+  const rawMaps = (mapsUrl ?? "").trim();
+  if (/^https?:\/\//i.test(rawMaps)) return rawMaps;
+  const query = (physicalAddress || rawMaps || "").trim();
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
+/** Digits-only international number for wa.me / tel: links. */
+export function whatsappDigits(whatsappNumber: string | null | undefined): string {
+  return String(whatsappNumber ?? "").replace(/\D/g, "");
+}
+
+/**
+ * Build a wa.me deep link. Optional prefilled text is URL-encoded.
+ * Example default: "Hola, me gustaría agendar una sesión"
+ */
+export function buildWhatsAppHref(
+  whatsappNumber: string | null | undefined,
+  prefilledText?: string | null,
+): string {
+  const digits = whatsappDigits(whatsappNumber);
+  if (!digits) return "https://wa.me/";
+  if (prefilledText && prefilledText.trim()) {
+    return `https://wa.me/${digits}?text=${encodeURIComponent(prefilledText.trim())}`;
+  }
+  return `https://wa.me/${digits}`;
+}
+
+/** Default bilingual prefilled messages for general WhatsApp contact CTAs. */
+export const WHATSAPP_PREFILL = {
+  es: "Hola, me gustaría agendar una sesión",
+  en: "Hi, I'd like to book a session",
+} as const;
+
+/**
+ * Turn an Instagram URL or bare handle into a full profile URL for sameAs / links.
+ * Returns null when the value cannot be parsed.
+ */
+export function instagramProfileUrl(
+  value: string | null | undefined,
+): string | null {
+  const handle = instagramHandleFromUrl(value);
+  if (!handle) return null;
+  return `https://www.instagram.com/${handle.replace(/^@/, "")}/`;
+}
+

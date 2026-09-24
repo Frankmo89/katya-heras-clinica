@@ -205,10 +205,5 @@ export function buildPatientConfirmHtml(p: PatientConfirmEmailData): string {
 </html>`;
 }
 
-/** Normalize clinic maps_url into an https link (or Google Maps search). */
-export function resolveMapsUrl(mapsUrl: string | null | undefined, physicalAddress: string | null | undefined): string {
-  const rawMaps = (mapsUrl ?? "").trim();
-  if (/^https?:\/\//i.test(rawMaps)) return rawMaps;
-  const query = physicalAddress || rawMaps;
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-}
+/** Re-export shared maps helper (kept here for existing email imports). */
+export { resolveMapsUrl } from "@/lib/clinicSettings";

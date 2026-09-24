@@ -4,8 +4,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, MessageCircle, X } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useClinicSettings } from "@/context/ClinicSettingsContext";
+import {
+  buildWhatsAppHref,
+  WHATSAPP_PREFILL,
+} from "@/lib/clinicSettings";
 
 const NAV_LINKS = {
   es: [
@@ -52,7 +57,16 @@ function LanguageToggle({ dark = false }: { dark?: boolean }) {
 export function SiteHeader() {
   const pathname  = usePathname();
   const { lang }  = useLanguage();
+  const { settings } = useClinicSettings();
   const [isOpen, setIsOpen] = useState(false);
+  const waHref = buildWhatsAppHref(
+    settings.whatsapp_number,
+    WHATSAPP_PREFILL[lang],
+  );
+  const waLabel = lang === "es" ? "WhatsApp" : "WhatsApp";
+  const waAria = lang === "es"
+    ? "Escribir por WhatsApp para agendar"
+    : "Message on WhatsApp to book";
 
   // Close when the route changes (Link click already calls close, but
   // this covers programmatic navigation and back/forward).
@@ -196,8 +210,8 @@ export function SiteHeader() {
         {/* Hairline */}
         <div className="mx-8 border-t border-[rgba(30,41,59,0.08)]" />
 
-        {/* Bottom: CTA + language toggle */}
-        <div className="flex flex-col items-center gap-5 px-8 py-10">
+        {/* Bottom: CTA + WhatsApp + language toggle */}
+        <div className="flex flex-col items-center gap-4 px-8 py-10">
           <Link
             href="/reservar"
             onClick={() => setIsOpen(false)}
@@ -205,6 +219,17 @@ export function SiteHeader() {
           >
             {lang === "es" ? "Reservar una sesión" : "Book a session"}
           </Link>
+          <a
+            href={waHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setIsOpen(false)}
+            aria-label={waAria}
+            className="inline-flex w-full max-w-[360px] items-center justify-center gap-2 rounded-full border border-[var(--color-text)]/15 bg-[var(--color-background-soft)] py-3.5 font-sans text-sm uppercase tracking-widest text-[var(--color-text)] transition-colors duration-200 hover:border-[var(--color-bronze)]/40 hover:text-[var(--color-bronze)]"
+          >
+            <MessageCircle size={16} strokeWidth={1.5} aria-hidden />
+            {waLabel}
+          </a>
           <LanguageToggle dark />
         </div>
 

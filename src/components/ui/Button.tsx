@@ -11,6 +11,10 @@ interface ButtonProps {
   icon?: ReactNode;
   className?: string;
   disabled?: boolean;
+  /** For external CTAs (Maps, WhatsApp). Ignored when href is omitted. */
+  target?: string;
+  rel?: string;
+  "aria-label"?: string;
 }
 
 const variantClasses: Record<Variant, string> = {
@@ -33,6 +37,9 @@ export function Button({
   icon,
   className = "",
   disabled = false,
+  target,
+  rel,
+  "aria-label": ariaLabel,
 }: ButtonProps) {
   // Disabled state overrides the variant's own color entirely (rather than
   // just dimming it) — a bronze/primary button at reduced opacity still
@@ -50,15 +57,29 @@ export function Button({
   );
 
   if (href) {
+    const isExternal = /^https?:\/\//i.test(href) || href.startsWith("mailto:") || href.startsWith("tel:");
+    if (isExternal) {
+      return (
+        <a
+          href={href}
+          className={classes}
+          target={target}
+          rel={rel}
+          aria-label={ariaLabel}
+        >
+          {content}
+        </a>
+      );
+    }
     return (
-      <Link href={href} className={classes}>
+      <Link href={href} className={classes} aria-label={ariaLabel}>
         {content}
       </Link>
     );
   }
 
   return (
-    <button onClick={onClick} disabled={disabled} className={classes}>
+    <button onClick={onClick} disabled={disabled} className={classes} aria-label={ariaLabel}>
       {content}
     </button>
   );

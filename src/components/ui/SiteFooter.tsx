@@ -3,64 +3,15 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
-import { useClinicSettings, type DaySchedule } from "@/context/ClinicSettingsContext";
-
-// ── Schedule formatting helpers ───────────────────────────────────────────────
-// Groups consecutive open days that share the same hours into a single range
-// label, e.g. [Mon,Tue,Wed,Thu,Fri all 09-18] → "Lun – Vie · 09:00 – 18:00".
-
-type DayGroup = { startDay: number; endDay: number; openTime: string; closeTime: string };
-
-function buildGroups(days: DaySchedule[]): DayGroup[] {
-  const open = days.filter((d) => d.is_open && d.open_time && d.close_time);
-  if (open.length === 0) return [];
-
-  const groups: DayGroup[] = [];
-  let cur: DayGroup = {
-    startDay: open[0].day_of_week,
-    endDay:   open[0].day_of_week,
-    openTime:  open[0].open_time!.slice(0, 5),
-    closeTime: open[0].close_time!.slice(0, 5),
-  };
-
-  for (let i = 1; i < open.length; i++) {
-    const d  = open[i];
-    const ot = d.open_time!.slice(0, 5);
-    const ct = d.close_time!.slice(0, 5);
-    if (d.day_of_week === cur.endDay + 1 && ot === cur.openTime && ct === cur.closeTime) {
-      cur.endDay = d.day_of_week;
-    } else {
-      groups.push(cur);
-      cur = { startDay: d.day_of_week, endDay: d.day_of_week, openTime: ot, closeTime: ct };
-    }
-  }
-  groups.push(cur);
-  return groups;
-}
-
-function formatSchedule(days: DaySchedule[], lang: "es" | "en"): string[] {
-  // day_of_week: 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  const names =
-    lang === "es"
-      ? ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
-      : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  return buildGroups(days).map((g) => {
-    const label =
-      g.startDay === g.endDay
-        ? names[g.startDay]
-        : `${names[g.startDay]} – ${names[g.endDay]}`;
-    return `${label} · ${g.openTime} – ${g.closeTime}`;
-  });
-}
-
-/** Accepts either a full URL or a bare handle (with or without a leading
- *  @) and returns a real instagram.com link either way — the admin field
- *  has held a bare handle in practice, not a URL. */
-function instagramHref(value: string): string {
-  const trimmed = value.trim();
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://instagram.com/${trimmed.replace(/^@/, "")}`;
-}
+import { useClinicSettings } from "@/context/ClinicSettingsContext";
+import { formatScheduleLines } from "@/lib/clinicSchedule";
+import {
+  buildWhatsAppHref,
+  instagramProfileUrl,
+  resolveMapsUrl,
+  WHATSAPP_PREFILL,
+  whatsappDigits,
+} from "@/lib/clinicSettings";
 
 function LanguageToggle() {
   const { lang, setLang } = useLanguage();
@@ -86,7 +37,14 @@ function LanguageToggle() {
 export function SiteFooter() {
   const { t, lang } = useLanguage();
   const { settings, weeklySchedule, loading } = useClinicSettings();
-  const scheduleLines = formatSchedule(weeklySchedule, lang as "es" | "en");
+  const scheduleLines = formatScheduleLines(weeklySchedule, lang as "es" | "en");
+  const mapsHref = resolveMapsUrl(settings.maps_url, settings.physical_address);
+  const waHref = buildWhatsAppHref(
+    settings.whatsapp_number,
+    WHATSAPP_PREFILL[lang as "es" | "en"],
+  );
+  const igHref = settings.instagram_url ? instagramProfileUrl(settings.instagram_url) : null;
+  const telHref = `tel:+${whatsappDigits(settings.whatsapp_number)}`;
 
   return (
     <footer className="mt-24 bg-[var(--color-background-soft)] pb-12 pt-20">
@@ -128,7 +86,15 @@ export function SiteFooter() {
             </div>
           ) : (
             <p className="text-sm leading-7 text-[var(--color-text)]">
-              {settings.physical_address}<br />
+              <Link
+                href={mapsHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-[var(--color-bronze)]"
+              >
+                {settings.physical_address}
+              </Link>
+              <br />
               <span className="text-[var(--color-text)]/50">
                 {t("Cita previa", "By appointment")}
               </span>
@@ -183,16 +149,27 @@ export function SiteFooter() {
               </Link>
               <br />
               <Link
-                href={`tel:${settings.whatsapp_number.replace(/[\s-]/g, "")}`}
+                href={waHref}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-[var(--color-text)] transition-colors hover:text-[var(--color-bronze)]"
+                aria-label={t("WhatsApp", "WhatsApp")}
               >
-                {settings.whatsapp_number}
+                WhatsApp · {settings.whatsapp_number}
               </Link>
-              {settings.instagram_url && (
+              <br />
+              <Link
+                href={telHref}
+                className="text-[var(--color-text)]/70 transition-colors hover:text-[var(--color-bronze)]"
+                aria-label={t("Llamar", "Call")}
+              >
+                {t("Llamar", "Call")}
+              </Link>
+              {igHref && (
                 <>
                   <br />
                   <Link
-                    href={instagramHref(settings.instagram_url)}
+                    href={igHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[var(--color-text)] transition-colors hover:text-[var(--color-bronze)]"
