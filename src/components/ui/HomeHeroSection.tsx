@@ -7,6 +7,7 @@ import { useLanguage } from "@/context/LanguageContext";
 
 const COPY = {
   es: {
+    locationChip: "Osteopatía en Tecate, B.C. · cerca de la frontera",
     eyebrow: "Masaje tailandés · Osteopatía holística",
     headPre: "Tu cuerpo",
     lead: "recuerda",
@@ -16,6 +17,7 @@ const COPY = {
     ctaGhost: "Ver servicios",
   },
   en: {
+    locationChip: "Osteopathy in Tecate, B.C. · near the border",
     eyebrow: "Thai massage · Holistic osteopathy",
     headPre: "Your body",
     lead: "remembers",
@@ -96,6 +98,9 @@ export function HomeHeroSection({
 
         {/* Text INSIDE the hero — Mobbin full-bleed pattern (unchanged Phase 1) */}
         <div className="relative z-10 flex min-h-[72vh] flex-col justify-end px-6 pb-10 pt-24 md:min-h-[78vh] md:px-12 md:pb-14 md:pt-28">
+          <p className="mb-3 inline-flex max-w-full items-center rounded-full border border-white/25 bg-white/10 px-3.5 py-1.5 text-[11px] font-medium tracking-[0.04em] text-white/95 backdrop-blur-md md:mb-4 md:text-xs">
+            {c.locationChip}
+          </p>
           <p className="mb-4 text-[11px] uppercase tracking-[0.28em] text-white/80 md:mb-5 md:text-xs">
             {c.eyebrow}
           </p>

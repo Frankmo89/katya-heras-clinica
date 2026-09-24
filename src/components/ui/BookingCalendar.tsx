@@ -4,27 +4,29 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useLanguage } from "@/context/LanguageContext";
+import { CLINIC_TIMEZONE } from "@/lib/clinicTimezone";
 
-const TZ = "America/Tijuana";
+/** IANA zone for Tecate, B.C. (no America/Tecate exists). */
+const TZ = CLINIC_TIMEZONE;
 const HORIZON_DAYS = 60; // must match generate_available_slots()'s call range
 const GROUP_THRESHOLD = 8; // group into Mañana/Tarde/Noche past this many slots/day
 
 export type PickedSlot = {
   id: string;
   startIso: string;
-  /** Tijuana wall-clock date/time, expressed as a browser-local Date so
+  /** Clinic (Tecate) wall-clock date/time, expressed as a browser-local Date so
    *  existing display code (toLocaleDateString, setHours, etc.) reads back
-   *  the correct Tijuana numbers regardless of the visitor's own timezone. */
+   *  the correct clinic-local numbers regardless of the visitor's own timezone. */
   displayDate: Date;
-  displayTime: string; // "HH:MM", Tijuana
+  displayTime: string; // "HH:MM", clinic local (Tecate)
 };
 
 type SlotRow = { id: string; start_time: string };
 
-// ── Tijuana timezone helpers ────────────────────────────────────────────
+// ── Clinic local (Tecate) timezone helpers ───────────────────────────────
 // No date library in this project — Intl.DateTimeFormat with an explicit
 // timeZone is enough for the wall-clock extraction we need here.
-function tijuanaParts(d: Date) {
+function clinicLocalParts(d: Date) {
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: TZ,
     year: "numeric",
@@ -46,25 +48,25 @@ function tijuanaParts(d: Date) {
   };
 }
 
-function tijuanaIsoDate(d: Date): string {
-  const { year, month, day } = tijuanaParts(d);
+function clinicLocalIsoDate(d: Date): string {
+  const { year, month, day } = clinicLocalParts(d);
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function tijuanaTimeLabel(d: Date): string {
-  const { hour, minute } = tijuanaParts(d);
+function clinicLocalTimeLabel(d: Date): string {
+  const { hour, minute } = clinicLocalParts(d);
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 // Builds a Date whose LOCAL getters (getFullYear, getHours, toLocaleDateString...)
-// return the Tijuana wall-clock numbers, regardless of the browser's own
+// return the clinic (Tecate) wall-clock numbers, regardless of the browser's own
 // timezone — for display-only use, never for instant/arithmetic.
-function tijuanaAsLocalDate(d: Date): Date {
-  const { year, month, day, hour, minute } = tijuanaParts(d);
+function clinicLocalAsBrowserDate(d: Date): Date {
+  const { year, month, day, hour, minute } = clinicLocalParts(d);
   return new Date(year, month - 1, day, hour, minute, 0, 0);
 }
 
-// UTC query window for a given Tijuana calendar month, padded a day on each
+// UTC query window for a given clinic-local calendar month, padded a day on each
 // side so no row near the boundary is missed regardless of DST offset (-7/-8).
 // Rows outside the target month are discarded client-side after fetching.
 function monthQueryRangeUtc(year: number, month0: number) {
@@ -137,11 +139,11 @@ interface BookingCalendarProps {
 export function BookingCalendar({ serviceId, selectedSlotId, onSelectSlot }: BookingCalendarProps) {
   const { lang } = useLanguage();
 
-  const today = useMemo(() => tijuanaParts(new Date()), []);
+  const today = useMemo(() => clinicLocalParts(new Date()), []);
   const horizon = useMemo(() => {
     const d = new Date();
     d.setUTCDate(d.getUTCDate() + HORIZON_DAYS);
-    return tijuanaParts(d);
+    return clinicLocalParts(d);
   }, []);
 
   const [visibleYear, setVisibleYear] = useState(today.year);
@@ -179,7 +181,7 @@ export function BookingCalendar({ serviceId, selectedSlotId, onSelectSlot }: Boo
 
         if (cancelled) return;
         if (!error && data && data.length > 0) {
-          const iso = tijuanaIsoDate(new Date(data[0].start_time));
+          const iso = clinicLocalIsoDate(new Date(data[0].start_time));
           const [y, m] = iso.split("-").map(Number);
           setVisibleYear(y);
           setVisibleMonth0(m - 1);
@@ -225,7 +227,7 @@ export function BookingCalendar({ serviceId, selectedSlotId, onSelectSlot }: Boo
 
       const map = new Map<string, SlotRow[]>();
       for (const row of data ?? []) {
-        const iso = tijuanaIsoDate(new Date(row.start_time));
+        const iso = clinicLocalIsoDate(new Date(row.start_time));
         const [y, m] = iso.split("-").map(Number);
         if (y !== visibleYear || m !== visibleMonth0 + 1) continue; // discard padding-day rows
         if (!map.has(iso)) map.set(iso, []);
@@ -362,8 +364,8 @@ export function BookingCalendar({ serviceId, selectedSlotId, onSelectSlot }: Boo
   );
 
   const handlePickTime = (row: SlotRow) => {
-    const displayDate = tijuanaAsLocalDate(new Date(row.start_time));
-    const displayTime = tijuanaTimeLabel(new Date(row.start_time));
+    const displayDate = clinicLocalAsBrowserDate(new Date(row.start_time));
+    const displayTime = clinicLocalTimeLabel(new Date(row.start_time));
     onSelectSlot({ id: row.id, startIso: row.start_time, displayDate, displayTime });
     setAnnounce(
       lang === "es" ? `Hora seleccionada: ${displayTime}` : `Selected time: ${displayTime}`
@@ -382,7 +384,7 @@ export function BookingCalendar({ serviceId, selectedSlotId, onSelectSlot }: Boo
       evening: [],
     };
     for (const row of selectedDaySlots) {
-      groups[partOfDay(tijuanaTimeLabel(new Date(row.start_time)))].push(row);
+      groups[partOfDay(clinicLocalTimeLabel(new Date(row.start_time)))].push(row);
     }
     return groups;
   }, [selectedDaySlots]);
@@ -534,7 +536,7 @@ function TimeButton({
   selected: boolean;
   onPick: (row: SlotRow) => void;
 }) {
-  const label = tijuanaTimeLabel(new Date(row.start_time));
+  const label = clinicLocalTimeLabel(new Date(row.start_time));
   return (
     <button
       type="button"

@@ -88,7 +88,7 @@ All six active services received a hero image. Crops are ~16:10 WebP (~q80), und
 - Pillow crop ≈16:10, export WebP quality ~80, all files ≪ 5 MB (`uploadImage.ts` max).
 - Uploaded to Supabase Storage `service-images/services/{slug}.webp` (not hotlinked).
 - `hero_image` updated in production DB (CMS-driven UI — live without waiting for this PR merge).
-- **Skin-tone consistency (2026-09-22):** Reviewed the six heroes for grid consistency; prefer light–medium warm tones representative of the Tijuana/San Diego (predominantly Latino/Mestizo) patient base. Kinesiotaping swapped for that reason.
+- **Skin-tone consistency (2026-09-22):** Reviewed the six heroes for grid consistency; prefer light–medium warm tones representative of the Tecate / border-region (predominantly Latino/Mestizo) patient base. Kinesiotaping swapped for that reason.
 - **Reminder:** These are **PLACEHOLDERS**. Replace with Katya’s real clinic photos when available; update or remove this log accordingly.
 
 ## License confirmations (general)

@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { useClinicSettings } from "@/context/ClinicSettingsContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { formatPrice, type Currency } from "@/lib/format";
+import { resolveMapsUrl } from "@/lib/clinicSettings";
 import { BookingCalendar, type PickedSlot } from "@/components/ui/BookingCalendar";
 
 const UNAVAILABLE_SERVICE_NOTE = {
@@ -121,7 +122,7 @@ function ReservarPageContent() {
 
   // The picked slot, straight from BookingCalendar — its startIso is the
   // authoritative value handed to confirm_booking; displayDate/displayTime
-  // are Tijuana wall-clock, safe for the browser-local display code below.
+  // are clinic (Tecate) wall-clock, safe for the browser-local display code below.
   const [selectedSlot, setSelectedSlot] = useState<PickedSlot | null>(null);
 
   const [cancelConfirm, setCancelConfirm] = useState(false);
@@ -231,7 +232,7 @@ function ReservarPageContent() {
   //
   // p_slot_start is the exact start_time ISO string from the picked slot
   // (selectedSlot.startIso), not a client-rebuilt Date from `date` + `time`
-  // — those two are display strings derived from BookingCalendar's Tijuana
+  // — those two are display strings derived from BookingCalendar's clinic-local
   // conversion and are only ever used for on-screen display downstream.
   const handleConfirm = async () => {
     if (!selectedSlot || !date || !time || !name.trim() || !email.trim() || !phone.trim() || !svc) return;
@@ -787,7 +788,7 @@ function ReservarPageContent() {
                     {clinicInfo.physical_address}
                   </p>
                   <a
-                    href={resolveMapsHref(clinicInfo.maps_url, clinicInfo.physical_address)}
+                    href={resolveMapsUrl(clinicInfo.maps_url, clinicInfo.physical_address)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-1 inline-flex items-center gap-1.5 text-[13px] tracking-[0.04em] text-[var(--color-bronze)] transition-colors hover:text-[var(--color-bronze-hover)]"
@@ -959,15 +960,6 @@ function ReservarPageContent() {
     </div>
   );
 }
-
-/** Prefer a real http(s) Maps URL; fall back to a Google search for the address.
- *  clinic_settings.maps_url sometimes holds a raw street address (not a URL). */
-function resolveMapsHref(mapsUrl: string, address: string): string {
-  const trimmed = (mapsUrl ?? "").trim();
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address || trimmed)}`;
-}
-
 
 export default function ReservarPage() {
   return (
