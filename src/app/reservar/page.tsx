@@ -122,7 +122,7 @@ function ReservarPageContent() {
 
   // The picked slot, straight from BookingCalendar — its startIso is the
   // authoritative value handed to confirm_booking; displayDate/displayTime
-  // are Tijuana wall-clock, safe for the browser-local display code below.
+  // are clinic (Tecate) wall-clock, safe for the browser-local display code below.
   const [selectedSlot, setSelectedSlot] = useState<PickedSlot | null>(null);
 
   const [cancelConfirm, setCancelConfirm] = useState(false);
@@ -232,7 +232,7 @@ function ReservarPageContent() {
   //
   // p_slot_start is the exact start_time ISO string from the picked slot
   // (selectedSlot.startIso), not a client-rebuilt Date from `date` + `time`
-  // — those two are display strings derived from BookingCalendar's Tijuana
+  // — those two are display strings derived from BookingCalendar's clinic-local
   // conversion and are only ever used for on-screen display downstream.
   const handleConfirm = async () => {
     if (!selectedSlot || !date || !time || !name.trim() || !email.trim() || !phone.trim() || !svc) return;

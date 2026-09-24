@@ -12,7 +12,7 @@ import {
 
 const COPY = {
   es: {
-    headline: "Atiendo pacientes de San Diego.",
+    headline: "Cerca de la frontera, en Tecate.",
     sub: "Garita de Tecate · estacionamiento privado.",
     ctaMaps: "Cómo llegar",
     ctaWa: "WhatsApp",
@@ -20,7 +20,7 @@ const COPY = {
     ariaWa: "Escribir por WhatsApp para agendar",
   },
   en: {
-    headline: "I see patients from San Diego.",
+    headline: "Near the border, in Tecate.",
     sub: "Tecate border crossing · private parking.",
     ctaMaps: "Get directions",
     ctaWa: "WhatsApp",

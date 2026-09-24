@@ -187,7 +187,7 @@ export function SiteFooter() {
       {/* Bottom bar */}
       <div className="mx-auto mt-16 flex max-w-[1200px] flex-col items-center justify-between gap-4 border-t border-[var(--color-text)]/10 px-8 pt-6 text-xs text-[var(--color-text)]/50 sm:flex-row">
         <span>
-          © 2026 Katya Heras Clínica · {t("San Diego ↔ Tecate", "San Diego ↔ Tecate")}
+          © 2026 Katya Heras Clínica · {t("Tecate, B.C. · cerca de la frontera", "Tecate, B.C. · near the border")}
         </span>
         <LanguageToggle />
       </div>

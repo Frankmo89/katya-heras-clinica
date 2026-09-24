@@ -1,3 +1,4 @@
+import { CLINIC_TIMEZONE } from "@/lib/clinicTimezone";
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
@@ -69,11 +70,11 @@ export async function GET(request: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  // toISOString() would give the UTC calendar date, which during Tijuana
+  // toISOString() would give the UTC calendar date, which during Tecate
   // evenings is already tomorrow — compute "today" in the clinic's own
   // timezone instead, then add 60 calendar days as plain UTC-based date
   // math (no timezone reinterpretation involved, so no DST/offset risk).
-  const from = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tijuana" }).format(new Date());
+  const from = new Intl.DateTimeFormat("en-CA", { timeZone: CLINIC_TIMEZONE }).format(new Date());
   const [y, m, d] = from.split("-").map(Number);
   const to = new Date(Date.UTC(y, m - 1, d + 60)).toISOString().split("T")[0];
 

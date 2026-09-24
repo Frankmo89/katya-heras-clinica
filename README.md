@@ -1,6 +1,6 @@
 # Katya Heras Clinic — Comprehensive SaaS Platform
 
-> A full-stack clinical management system and patient-facing portal built for a cross-border osteopathy clinic operating between Tecate, México and San Diego, CA.
+> A full-stack clinical management system and patient-facing portal built for a cross-border osteopathy clinic in Tecate, B.C., México (cerca de la frontera).
 
 [![Next.js](https://img.shields.io/badge/Next.js_15-App_Router-000000?style=flat-square&logo=nextdotjs)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)

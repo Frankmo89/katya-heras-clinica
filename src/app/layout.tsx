@@ -24,7 +24,7 @@ const inter = Inter({
 // shown to every viewer regardless of language.
 const SITE_TITLE = "Osteopatía en Tecate, B.C. | Katya Heras";
 const SITE_DESCRIPTION =
-  "Osteopatía y masaje clínico en Tecate, B.C., a minutos de San Diego. Dolor de espalda, cuello y ciática. Reserva en línea.";
+  "Osteopatía y masaje clínico en Tecate, B.C., cerca de la frontera. Dolor de espalda, cuello y ciática. Reserva en línea.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || SITE_ORIGIN),

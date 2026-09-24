@@ -7,7 +7,7 @@ import { useLanguage } from "@/context/LanguageContext";
 
 const COPY = {
   es: {
-    locationChip: "Osteopatía en Tecate, B.C. · cerca de San Diego",
+    locationChip: "Osteopatía en Tecate, B.C. · cerca de la frontera",
     eyebrow: "Masaje tailandés · Osteopatía holística",
     headPre: "Tu cuerpo",
     lead: "recuerda",
@@ -17,7 +17,7 @@ const COPY = {
     ctaGhost: "Ver servicios",
   },
   en: {
-    locationChip: "Osteopathy in Tecate, B.C. · near San Diego",
+    locationChip: "Osteopathy in Tecate, B.C. · near the border",
     eyebrow: "Thai massage · Holistic osteopathy",
     headPre: "Your body",
     lead: "remembers",

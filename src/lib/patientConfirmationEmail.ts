@@ -1,3 +1,5 @@
+import { CLINIC_TIMEZONE } from "@/lib/clinicTimezone";
+
 /**
  * Shared patient-confirmation email HTML + copy.
  * Used by the public once-only send route and the staff resend route.
@@ -15,17 +17,18 @@ export function esc(s: string): string {
     .replace(/'/g, "&#039;");
 }
 
-export function formatTijuana(startIso: string, lang: PatientConfirmLang) {
+/** Format appointment instant in clinic local time (Tecate, B.C.). */
+export function formatClinicLocal(startIso: string, lang: PatientConfirmLang) {
   const d = new Date(startIso);
   const dateLabel = new Intl.DateTimeFormat(lang === "es" ? "es-MX" : "en-US", {
-    timeZone: "America/Tijuana",
+    timeZone: CLINIC_TIMEZONE,
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
   }).format(d);
   const timeLabel = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Tijuana",
+    timeZone: CLINIC_TIMEZONE,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -50,7 +53,7 @@ export const PATIENT_CONFIRM_COPY = {
     intro: "Tu cita quedó confirmada. Aquí tienes todos los detalles:",
     labelService: "Servicio",
     labelWhen: "Fecha y hora",
-    whenSuffix: "h · hora de Tijuana",
+    whenSuffix: "h · hora de Tecate",
     labelWhere: "Dirección",
     openMaps: "Abrir en Google Maps",
     labelBring: "Qué traer",
@@ -67,7 +70,7 @@ export const PATIENT_CONFIRM_COPY = {
     intro: "Your appointment is confirmed. Here are the details:",
     labelService: "Service",
     labelWhen: "Date & time",
-    whenSuffix: "· Tijuana time",
+    whenSuffix: "· Tecate time",
     labelWhere: "Address",
     openMaps: "Open in Google Maps",
     labelBring: "What to bring",
@@ -111,7 +114,7 @@ export interface PatientConfirmEmailData {
 
 export function buildPatientConfirmHtml(p: PatientConfirmEmailData): string {
   const c = PATIENT_CONFIRM_COPY[p.lang];
-  const { dateLabel, timeLabel } = formatTijuana(p.startIso, p.lang);
+  const { dateLabel, timeLabel } = formatClinicLocal(p.startIso, p.lang);
 
   const bringRow = p.whatToBring
     ? row(

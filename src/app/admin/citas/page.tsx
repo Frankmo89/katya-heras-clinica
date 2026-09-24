@@ -10,6 +10,7 @@ import { authHeaders } from "@/lib/authFetch";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { mapDbService, type DbService, type Service } from "@/data/services";
+import { CLINIC_TIMEZONE } from "@/lib/clinicTimezone";
 
 // ── Today ISO date ─────────────────────────────────────────────────────────
 function getTodayIso(): string {
@@ -57,20 +58,20 @@ function monthHeading(yyyyMm: string): string {
 
 
 /**
- * Converts a "YYYY-MM-DD" + "HH:MM" pair, understood as Tijuana wall-clock
- * time, to the equivalent UTC ISO instant — independent of the admin's own
- * browser timezone. Standard two-pass timezone-offset trick: read the
- * target numbers as if they were already UTC, ask what Tijuana's wall
- * clock reads for that instant, then correct by the difference.
+ * Converts a "YYYY-MM-DD" + "HH:MM" pair, understood as Tecate (clinic)
+ * wall-clock time, to the equivalent UTC ISO instant — independent of the
+ * admin's own browser timezone. Standard two-pass timezone-offset trick:
+ * read the target numbers as if they were already UTC, ask what the clinic
+ * wall clock reads for that instant, then correct by the difference.
  */
-function tijuanaWallClockToIso(dateStr: string, timeStr: string): string {
+function clinicWallClockToIso(dateStr: string, timeStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const [hh, mm] = timeStr.split(":").map(Number);
   const naiveUtc = Date.UTC(y, m - 1, d, hh, mm, 0);
 
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Tijuana",
+      timeZone: CLINIC_TIMEZONE,
       hourCycle: "h23",
       year: "numeric", month: "2-digit", day: "2-digit",
       hour: "2-digit", minute: "2-digit", second: "2-digit",
@@ -78,11 +79,11 @@ function tijuanaWallClockToIso(dateStr: string, timeStr: string): string {
       .formatToParts(new Date(naiveUtc))
       .map((p) => [p.type, p.value])
   );
-  const tijuanaReadingAsUtc = Date.UTC(
+  const clinicReadingAsUtc = Date.UTC(
     Number(parts.year), Number(parts.month) - 1, Number(parts.day),
     Number(parts.hour), Number(parts.minute), Number(parts.second)
   );
-  const offset = tijuanaReadingAsUtc - naiveUtc;
+  const offset = clinicReadingAsUtc - naiveUtc;
 
   return new Date(naiveUtc - offset).toISOString();
 }
@@ -202,7 +203,7 @@ function formatAttemptTime(iso: string | null | undefined): string | null {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return null;
   return d.toLocaleString("es-MX", {
-    timeZone: "America/Tijuana",
+    timeZone: CLINIC_TIMEZONE,
     day: "numeric",
     month: "short",
     hour: "2-digit",
@@ -568,9 +569,9 @@ export default function CitasPage() {
     setSavingManual(true);
     setManualError(null);
 
-    // Interpret the picked date/time as Tijuana wall-clock (the clinic's
+    // Interpret the picked date/time as Tecate wall-clock (the clinic's
     // own local time), not the admin's browser timezone.
-    const p_slot_start = tijuanaWallClockToIso(manualDate, manualTime);
+    const p_slot_start = clinicWallClockToIso(manualDate, manualTime);
 
     const { data, error: rpcError } = await supabase.rpc("admin_create_booking", {
       p_service_id:    manualService,
@@ -1272,7 +1273,7 @@ export default function CitasPage() {
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
-                    Hora (Tijuana) <span className="normal-case text-red-400">*</span>
+                    Hora (Tecate) <span className="normal-case text-red-400">*</span>
                   </label>
                   <input
                     type="time"
