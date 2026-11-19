@@ -7,7 +7,7 @@ import { useLanguage } from "@/context/LanguageContext";
 
 const COPY = {
   es: {
-    eyebrow: "Masaje tailandés · Osteopatía holística",
+    eyebrow: "Osteopatía · Masajes · Bienestar",
     headPre: "Tu cuerpo",
     lead: "recuerda",
     headPost: "Yo te escucho.",
@@ -16,7 +16,7 @@ const COPY = {
     ctaGhost: "Ver servicios",
   },
   en: {
-    eyebrow: "Thai massage · Holistic osteopathy",
+    eyebrow: "Osteopathy · Massages · Wellbeing",
     headPre: "Your body",
     lead: "remembers",
     headPost: "I listen.",
